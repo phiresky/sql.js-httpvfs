@@ -2,6 +2,7 @@
 "_malloc",
 "_free",
 "_sqlite3_open",
+"_sqlite3_open_v2",
 "_sqlite3_exec",
 "_sqlite3_free",
 "_sqlite3_errmsg",
@@ -41,5 +42,6 @@
 "_sqlite3_result_int",
 "_sqlite3_result_int64",
 "_sqlite3_result_error",
+"_sqlite3_vfs_register",
 "_RegisterExtensionFunctions"
 ]
