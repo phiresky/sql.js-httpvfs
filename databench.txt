@@ -1,0 +1,29 @@
+query: select * from videoData where author = 'Adam Ragusea' limit 20;
+
+without index:
+
+req size, pg
+
+req size 4096, youtube-metadata-pg4096.sqlite3 total bytes fetched: 581490 total requests: 142
+req size 512, youtube-metadata-pg4096.sqlite3 total bytes fetched: 580496 total requests: 1136
+req size 4096, youtube-metadata-pg512.sqlite3 total bytes fetched: 782145 total requests: 191
+req size 512, youtube-metadata-pg512.sqlite3 total bytes fetched: 761901 total requests: 1491
+
+req size 4096, youtube-metadata-pg32768.sqlite3 total bytes fetched: 622440 total requests: 152
+req size 32768, youtube-metadata-pg32768.sqlite3 total bytes fetched: 622573 total requests: 19
+
+req size 4096, youtube-metadata-pg16384.sqlite3 total bytes fetched: 606060 total requests: 148
+req size 16384, youtube-metadata-pg16384.sqlite3 total bytes fetched: 606171 total requests: 37
+req size 32768, youtube-metadata-pg16384.sqlite3 total bytes fetched: 688107 total requests: 21
+
+req size 16384, youtube-metadata-pg16384-aligned.sqlite3 total bytes fetched: 1736598 total requests: 106
+
+with index on videoData(author) (page size always equal to request size):
+
+
+youtube-metadata-pg16384-aligned.sqlite3 total bytes fetched: 98298 total requests: 6
+
+youtube-metadata-pg32768.sqlite3 total bytes fetched: 491505 total requests: 15
+youtube-metadata-pg16384.sqlite3 total bytes fetched: 327660 total requests: 20
+youtube-metadata-pg4096.sqlite3 total bytes fetched: 98280 total requests: 24
+youtube-metadata-pg512.sqlite3 total bytes fetched: 24017 total requests: 47
