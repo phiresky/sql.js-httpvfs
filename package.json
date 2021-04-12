@@ -1,4 +1,4 @@
-{
+{"scripts": {"dev": "webpack serve"},
   "dependencies": {
     "@types/better-sqlite3": "^5.4.1",
     "@types/sql.js": "^1.4.2",
