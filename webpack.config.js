@@ -1,4 +1,6 @@
 const path = require("path");
+const BundleAnalyzerPlugin = require("webpack-bundle-analyzer")
+  .BundleAnalyzerPlugin;
 
 const ts = {
   loader: "ts-loader",
@@ -6,7 +8,7 @@ const ts = {
 };
 module.exports = {
   entry: "./src",
-  mode: "development",
+  // mode:,
   devtool: "source-map",
   module: {
     rules: [
@@ -33,12 +35,15 @@ module.exports = {
   output: {
     filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
+    assetModuleFilename: "images/[name]-[hash][ext][query]",
   },
   stats: {
     children: true,
   },
   devServer: {
+    publicPath: "/dist",
     hot: false,
     liveReload: false,
   },
+  plugins: [new BundleAnalyzerPlugin()],
 };

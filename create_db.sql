@@ -2,7 +2,7 @@ pragma page_size = 4096;
 -- 1024: db.sqlite3 total bytes fetched: 71632 total requests: 48
 -- 4096: db.sqlite3 total bytes fetched: 98286 total requests: 18
 
-attach database 'youtube-metadata-pg4096.sqlite3' as ytm;
+attach database 'data/youtube-metadata-pg4096.sqlite3' as ytm;
 
 CREATE TABLE authors (id integer primary key autoincrement, name text not null unique);
 

@@ -22,7 +22,7 @@ export async function createDbWorker() {
   const sqlite = Comlink.wrap<SqliteMod>(new SqliteWorker());
 
   const chunkSize = 4096;
-  const configUrl = new URL("dist/data/config.json", location.href);
+  const configUrl = new URL("data/config.json", location.href);
   const config: SplitFileConfig = await fetch(configUrl.toString()).then(e => e.json());
   const db = await sqlite.SplitFileHttpDatabase({
     ...config,

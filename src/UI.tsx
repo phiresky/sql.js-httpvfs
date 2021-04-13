@@ -12,7 +12,13 @@ import {
 import { action, makeAutoObservable, makeObservable, observable } from "mobx";
 import AsyncSelect from "react-select/async";
 import debounce from "debounce-promise";
-import Plot from "react-plotly.js";
+import createPlotlyComponent from "react-plotly.js/factory";
+import Plotly from "plotly.js/lib/core";
+import { textChangeRangeIsUnchanged } from "typescript";
+
+
+const Plot = createPlotlyComponent(Plotly);
+
 function formatDuration(sec_num: number) {
   const hours = Math.floor(sec_num / 3600);
   const minutes = Math.floor((sec_num - hours * 3600) / 60);
@@ -30,7 +36,6 @@ const SponsorPlot: React.FC<{
   data: SponsorInfo[];
   onHover: (m: SponsorInfo) => void;
 }> = observer((p) => {
-  console.log("RERENTDERING PLOT");
   return (
     <Plot
       style={{ width: "100%", maxWidth: "1200px", margin: "0 auto" }}
@@ -123,6 +128,7 @@ const VideoMetaDisplay: React.FC<{ video: SponsorInfo }> = observer(
 export class UI extends React.Component {
   worker: SqliteWorker | null = null;
   db: Database | null = null;
+  @observable initState = "Loading...";
   @observable
   data:
     | { state: "noinput" }
@@ -151,12 +157,13 @@ export class UI extends React.Component {
     clearInterval(this.interval);
   }
   async init() {
-    console.log("INIT");
+    this.initState =  "connectingToDb";
     const res = await createDbWorker();
     this.db = res.db;
     this.worker = res.worker;
     const initialAuthor = new URLSearchParams(location.search).get("uploader");
     if (initialAuthor) this.setAuthor(initialAuthor);
+    this.initState = "";
   }
   async setAuthor(search: string) {
     this.searchInput = search;
@@ -192,6 +199,7 @@ export class UI extends React.Component {
   setFocussed = (e: SponsorInfo) => (this.focussedVideo = e);
 
   render() {
+    if(this.initState) return <div>{this.initState}</div>;
     return (
       <div>
         <div>

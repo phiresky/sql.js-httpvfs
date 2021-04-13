@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "dev": "webpack serve"
+    "dev": "webpack serve --mode=development",
+    "build": "webpack build --mode=production"
   },
   "dependencies": {
     "@types/debounce-promise": "^3.1.3",
@@ -26,6 +27,7 @@
     "worker-loader": "^3.0.8"
   },
   "devDependencies": {
+    "webpack-bundle-analyzer": "^4.4.1",
     "webpack-dev-server": "^3.11.2"
   }
 }

@@ -18,7 +18,7 @@ export type LazyFileConfig = {
 
 // Lazy chunked Uint8Array (implements get and length from Uint8Array). Actual getting is abstracted away for eventual reuse.
 class LazyUint8Array {
-  lengthKnown = false;
+  serverChecked = false;
   chunks: Uint8Array[] = []; // Loaded chunks. Index is the chunk number
   totalFetchedBytes = 0;
   totalRequests = 0;
@@ -32,9 +32,8 @@ class LazyUint8Array {
   constructor(config: LazyFileConfig) {
     this._chunkSize = config.requestChunkSize;
     this.rangeMapper = config.rangeMapper;
-    if(config.fileLength) {
+    if (config.fileLength) {
       this._length = config.fileLength;
-      this.lengthKnown = true;
     }
   }
   get(idx: number) {
@@ -79,7 +78,7 @@ class LazyUint8Array {
       throw new Error("doXHR failed!");
     return this.chunks[chunkNum];
   }
-  cacheLength() {
+  checkServer() {
     // Find length
     var xhr = new XMLHttpRequest();
     const url = this.rangeMapper(0, 0).url;
@@ -95,23 +94,25 @@ class LazyUint8Array {
     var usesGzip =
       (header = xhr.getResponseHeader("Content-Encoding")) && header === "gzip";
 
-    if (usesGzip || !datalength || !hasByteServing) {
+    if (!hasByteServing) throw Error("server does not support byte serving");
+
+    if (usesGzip || !datalength) {
       throw Error("server uses gzip or doesn't have length");
     }
 
-    this._length = datalength;
-    this.lengthKnown = true;
+    if (!this._length) this._length = datalength;
+    this.serverChecked = true;
   }
   get length() {
-    if (!this.lengthKnown) {
-      this.cacheLength();
+    if (!this.serverChecked) {
+      this.checkServer();
     }
     return this._length!;
   }
 
   get chunkSize() {
-    if (!this.lengthKnown) {
-      this.cacheLength();
+    if (!this.serverChecked) {
+      this.checkServer();
     }
     return this._chunkSize!;
   }
