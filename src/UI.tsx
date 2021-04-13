@@ -16,7 +16,6 @@ import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js/lib/core";
 import { textChangeRangeIsUnchanged } from "typescript";
 
-
 const Plot = createPlotlyComponent(Plotly);
 
 function formatDuration(sec_num: number) {
@@ -90,11 +89,15 @@ function formatBytes(b: number) {
   return b + "B";
 }
 
-const SqliteStats: React.FC<{ stats: SqliteStats }> = observer(({ stats }) => {
+const SqliteStats: React.FC<{
+  stats: SqliteStats;
+  lastUpdated: number;
+}> = observer(({ stats, lastUpdated }) => {
   return (
     <>
       Sqlite stats: fetched {formatBytes(stats.totalFetchedBytes)} in{" "}
-      {stats.totalRequests} requests (DB size: {formatBytes(stats.totalBytes)})
+      {stats.totalRequests} requests (DB size: {formatBytes(stats.totalBytes)},
+      updated: {new Date(lastUpdated * 1000).toLocaleDateString()})
     </>
   );
 });
@@ -107,7 +110,7 @@ const VideoMetaDisplay: React.FC<{ video: SponsorInfo }> = observer(
           <img
             src={video.meta.maxresdefault_thumbnail}
             width={200}
-            style={{ float: "left" }}
+            style={{ float: "left", margin: "0.5em" }}
           ></img>
           <h4>{video.meta.title}</h4>
         </a>
@@ -139,6 +142,8 @@ export class UI extends React.Component {
   @observable
   stats: SqliteStats | null = null;
   @observable
+  dbConfig: { lastUpdated: number } | null = null;
+  @observable
   focussedVideo: SponsorInfo | null = null;
   @observable searchInput: string = "";
 
@@ -147,7 +152,7 @@ export class UI extends React.Component {
     this.init();
     makeObservable(this);
   }
-  interval: number = 0;
+  interval: any = 0;
   componentDidMount() {
     this.interval = setInterval(async () => {
       this.stats = (await this.worker?.getStats()) || null;
@@ -157,10 +162,11 @@ export class UI extends React.Component {
     clearInterval(this.interval);
   }
   async init() {
-    this.initState =  "connectingToDb";
+    this.initState = "connectingToDb";
     const res = await createDbWorker();
     this.db = res.db;
     this.worker = res.worker;
+    this.dbConfig = res.config;
     const initialAuthor = new URLSearchParams(location.search).get("uploader");
     if (initialAuthor) this.setAuthor(initialAuthor);
     this.initState = "";
@@ -199,7 +205,7 @@ export class UI extends React.Component {
   setFocussed = (e: SponsorInfo) => (this.focussedVideo = e);
 
   render() {
-    if(this.initState) return <div>{this.initState}</div>;
+    if (this.initState) return <div>{this.initState}</div>;
     return (
       <div>
         <div>
@@ -211,7 +217,7 @@ export class UI extends React.Component {
             loadOptions={this.authorsSearchDebounce}
             getOptionLabel={(e) => e.name}
             getOptionValue={(e) => e.name}
-            onChange={(e) => this.setAuthor(e.name)}
+            onChange={(e) => e && this.setAuthor(e.name)}
           />
         </div>
         {this.data.state === "noinput" ? (
@@ -227,9 +233,19 @@ export class UI extends React.Component {
             <SponsorPlot data={this.data.segs} onHover={this.setFocussed} />
           </div>
         )}
-        {this.focussedVideo && <VideoMetaDisplay video={this.focussedVideo} />}
+        {this.focussedVideo && <>Selected video: <VideoMetaDisplay video={this.focussedVideo} /></>}
         <footer style={{ marginTop: "5em", color: "gray" }}>
-          {this.stats ? <SqliteStats stats={this.stats} /> : ""}{" "}
+          <div>{this.stats ? (
+            <SqliteStats
+              stats={this.stats}
+              lastUpdated={this.dbConfig.lastUpdated}
+            />
+          ) : (
+            ""
+          )}{" "}
+          </div>
+          <div>Source Code: <a href="https://github.com/phiresky/youtube-sponsorship-stats/">https://github.com/phiresky/youtube-sponsorship-stats/</a></div>
+
         </footer>
       </div>
     );

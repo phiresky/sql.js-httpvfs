@@ -35,7 +35,7 @@ export async function createDbWorker() {
       `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${chunkSize}`
     );
 
-  return { worker: sqlite, db };
+  return { config, worker: sqlite, db };
 }
 
 async function testLoop(metaDb: Database) {

@@ -34,6 +34,7 @@ async function init() {
 }
 const sqljs = init();
 export type SplitFileConfig = {
+  lastUpdated: number;
   urlPrefix: string;
   serverChunkSize: number;
   databaseLengthBytes: number;
