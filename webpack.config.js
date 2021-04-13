@@ -35,7 +35,7 @@ module.exports = {
   output: {
     filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
-    assetModuleFilename: "images/[name]-[hash][ext][query]",
+    assetModuleFilename: "[name]-[hash][ext][query]",
   },
   stats: {
     children: true,
@@ -45,5 +45,5 @@ module.exports = {
     hot: false,
     liveReload: false,
   },
-  plugins: [new BundleAnalyzerPlugin()],
+  plugins: process.env.analyze ? [new BundleAnalyzerPlugin()]: [],
 };
