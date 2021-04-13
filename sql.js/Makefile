@@ -38,10 +38,7 @@ EMFLAGS = \
 	-s EXTRA_EXPORTED_RUNTIME_METHODS=@src/exported_runtime_methods.json \
 	-s SINGLE_FILE=0 \
 	-s NODEJS_CATCH_EXIT=0 \
-	-s NODEJS_CATCH_REJECTION=0 \
-	-s SMALL_XHR_CHUNKS=1 \
-	--js-library src/httpvfs.js \
-	--bind
+	-s NODEJS_CATCH_REJECTION=0
 
 EMFLAGS_ASM = \
 	-s WASM=0
@@ -63,12 +60,9 @@ EMFLAGS_OPTIMIZED= \
 EMFLAGS_DEBUG = \
 	-s INLINING_LIMIT=10 \
 	-s ASSERTIONS=1 \
-	-s SAFE_HEAP=1 \
-	-s STACK_OVERFLOW_CHECK=1 \
-	-s DEMANGLE_SUPPORT=1 \
 	-O1
 
-BITCODE_FILES = out/sqlite3.bc out/extension-functions.bc out/httpvfs.bc
+BITCODE_FILES = out/sqlite3.bc out/extension-functions.bc
 
 OUTPUT_WRAPPER_FILES = src/shell-pre.js src/shell-post.js
 
@@ -161,11 +155,6 @@ out/extension-functions.bc: sqlite-src/$(SQLITE_AMALGAMATION)
 	mkdir -p out
 	# Generate llvm bitcode
 	$(EMCC) $(CFLAGS) -s LINKABLE=1 -c sqlite-src/$(SQLITE_AMALGAMATION)/extension-functions.c -o $@
-
-out/httpvfs.bc: src/httpvfs.cpp
-	mkdir -p out
-	# Generate llvm bitcode
-	$(EMCC) $(CFLAGS) -s LINKABLE=1 -c src/httpvfs.cpp -o $@
 
 # TODO: This target appears to be unused. If we re-instatate it, we'll need to add more files inside of the JS folder
 # module.tar.gz: test package.json AUTHORS README.md dist/sql-asm.js
