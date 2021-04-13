@@ -33,12 +33,17 @@ function stats(db: Database) {
     db.lazyFile.contents.totalRequests
   );
 }
+async function init() {
+  const sql = await initSqlJs({
+    locateFile: (_file: string) => wasmfile,
+  });
+  initTransferHandlers(sql);
+  return sql;
+}
+const sqljs = init();
 const mod = {
-  async new(url: string, chunkSize: number): Promise<Database> {
-    const sql = await initSqlJs({
-      locateFile: (_file: string) => wasmfile,
-    });
-    initTransferHandlers(sql);
+  async UrlDatabase(url: string, chunkSize: number): Promise<Database> {
+    const sql = await sqljs;
     const db = new sql.UrlDatabase(url, chunkSize);
 
     setInterval(() => stats(db), 10000);

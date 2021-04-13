@@ -5,7 +5,7 @@ const ts = {
     options: { transpileOnly: true },
 };
 module.exports = {
-    entry: "./src/index.ts",
+    entry: "./src",
     mode: "development",
     module: {
         rules: [

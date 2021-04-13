@@ -28,7 +28,7 @@ class LazyUint8Array {
    
     if (typeof this.chunks[chunkNum] === "undefined") {
       if(this.lastEnd === start - 1) {
-        this.speed = Math.min(16, this.speed * 2);
+        this.speed = Math.min(64, this.speed * 2);
       } else {
         this.speed = 1;
       }
