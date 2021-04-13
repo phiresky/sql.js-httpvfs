@@ -816,10 +816,10 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
         // (created by create_function call)
         this.functions = {};
     }
-    function UrlDatabase(url, chunksize = 4096) {
-        this.filename = url.replace("/", "_");
-        const {createLazyFile} = require('../../src/lazyFile');
-        this.lazyFile = createLazyFile(FS, "/", this.filename, url, true, true, chunksize);
+
+    function UrlDatabase(filename, lazyFile) {
+        this.filename = filename;
+        this.lazyFile = lazyFile;
         const ret = sqlite3_open(this.filename, apiTemp, 1, null);
         this.db = getValue(apiTemp, "i32");
         this.handleError(ret);
@@ -1231,9 +1231,9 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
 
     // export Database to Module
     Module.Database = Database;
-    Module.VfsDatabase = VfsDatabase;
-    Module.UrlDatabase = UrlDatabase;
-    Module.FS = FS;
+    Module["VfsDatabase"] = VfsDatabase;
+    Module["UrlDatabase"] = UrlDatabase;
+    Module["FS"] = FS;
     VfsDatabase.prototype = Object.create(Database.prototype);
     UrlDatabase.prototype = Object.create(Database.prototype);
 };

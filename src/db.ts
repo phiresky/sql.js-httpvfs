@@ -1,7 +1,5 @@
-import initSqlJs from "../sql.js/dist/sql-wasm-debug.js";
-import wasmfile from "../sql.js/dist/sql-wasm-debug.wasm";
 import * as Comlink from "comlink";
-import SqliteWorker from "./sqlite.worker";
+import SqliteWorker, { SplitFileConfig } from "./sqlite.worker";
 
 import { chooseSegments, DBSegment } from "./util";
 import { SqliteMod } from "./sqlite.worker.js";
@@ -19,11 +17,17 @@ Comlink.transferHandlers.set("WORKERSQLPROXIES", {
     return Comlink.wrap(port);
   },
 });
+export type SqliteWorker = Comlink.Remote<SqliteMod>;
 export async function createDbWorker() {
   const sqlite = Comlink.wrap<SqliteMod>(new SqliteWorker());
 
   const chunkSize = 4096;
-  const db = await sqlite.UrlDatabase("db.sqlite3", chunkSize);
+  const configUrl = new URL("dist/data/config.json", location.href);
+  const config: SplitFileConfig = await fetch(configUrl.toString()).then(e => e.json());
+  const db = await sqlite.SplitFileHttpDatabase({
+    ...config,
+    urlPrefix: new URL(config.urlPrefix, configUrl).toString(),
+  });
   const pageSizeResp = await db.exec("pragma page_size");
   const pageSize = pageSizeResp[0].values[0][0];
   if (pageSize !== chunkSize)
@@ -31,8 +35,7 @@ export async function createDbWorker() {
       `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${chunkSize}`
     );
 
-
-  return db;
+  return { worker: sqlite, db };
 }
 
 async function testLoop(metaDb: Database) {
@@ -57,7 +60,7 @@ async function go() {
 
 function toObjects<T>(res: QueryExecResult[]): T[] {
   const r = res[0];
-  if(!r) return [];
+  if (!r) return [];
   return r.values.map((v) => {
     const o: any = {};
     for (let i = 0; i < r.columns.length; i++) {
@@ -66,26 +69,46 @@ function toObjects<T>(res: QueryExecResult[]): T[] {
     return o as T;
   });
 }
-type VideoMeta = {
+export type VideoMeta = {
   videoID: string;
-  published: number;
-  lengthSeconds: number;
   title: string;
+  maxresdefault_thumbnail: string;
+  published: number;
+  publishedText: string;
+  viewCount: number;
+  likeCount: number;
+  author: string;
+  authorURL: string;
+  channelThumbnail: string;
+  lengthSeconds: number;
+  category: string;
 };
 export async function authorsSearch(db: Database, author: string) {
   try {
-  const query_inner = author.split(" ").map(n => n.replace(/"/g, "")).map(e => `"${e}"`).join(" ");
-  const query = `NEAR(${query_inner})`;
-  const sql_query = `select name from authors_search where name match ? order by rank limit 20`;
-  console.log("executing search query", query, sql_query);
-  const ret = toObjects<{name: string}>(await db.exec(sql_query, [query]));
-  return ret;
-  } catch(e) {
+    const query_inner = author
+      .split(" ")
+      .map((n) => n.replace(/"/g, ""))
+      .map((e) => `"${e}"*`)
+      .join(" ");
+    const query = `NEAR(${query_inner})`;
+    const sql_query = `select name from authors_search where name match ? limit 20`;
+    console.log("executing search query", query, sql_query);
+    const ret = toObjects<{ name: string }>(await db.exec(sql_query, [query]));
+    return ret;
+  } catch (e) {
     console.error("authorsSearch", e);
     throw e;
   }
 }
-export async function getForAuthor(db: Database, author: string) {
+export type SponsorInfo = {
+  meta: VideoMeta;
+  durationSponsor: number;
+  percentSponsor: number;
+};
+export async function getForAuthor(
+  db: Database,
+  author: string
+): Promise<SponsorInfo[]> {
   /*await db.exec(`select s.rowid from sponsorTimes s
   join videoData v on s.videoid = v.videoid
   
@@ -93,7 +116,7 @@ export async function getForAuthor(db: Database, author: string) {
 
   const videos = toObjects<VideoMeta>(
     await db.exec(
-      "select videoData.videoID, published, lengthSeconds, title from videoData where author = ?",
+      "select * from videoData where author = ? order by published asc",
       [author]
     )
   );
@@ -102,7 +125,7 @@ export async function getForAuthor(db: Database, author: string) {
     await db.exec(
       // "select videoData.videoID, published, lengthSeconds, title from videoData join sponsorTimes on sponsorTimes.videoID = videoData.videoID where author = ? order by sponsorTimes.rowid asc",
       // [author]
-      "select * from sponsorTimes where authorID = (select id from authors where name = ?) order by videoID, startTime",
+      "select * from sponsorTimes where authorID = (select id from authors where name = ?) and not shadowHidden and category = 'sponsor' order by videoID, startTime",
       [author]
     )
   ); // select sponsorTimes.rowid, sponsorTimes.videoID from videoData join sponsorTimes on sponsorTimes.videoID = videoData.videoID where author = 'Adam Ragusea';
@@ -130,17 +153,14 @@ export async function getForAuthor(db: Database, author: string) {
     const segments = chooseSegments(sponsorTimes.filter((s) => s.votes > -1));
     const duration = segments
       .map((m) => m.endTime - m.startTime)
-      .reduce((a, b) => a + b);
+      .reduce((a, b) => a + b, 0);
     const total = video.meta.lengthSeconds;
-    const percent = (duration / total) * 100;
+    const percentSponsor = (duration / total) * 100;
     out.push({
+      meta: video.meta,
       durationSponsor: duration,
-      durationTotal: total,
-      percent,
-      videoTitle: video.meta.title,
-      videoID: video.meta.videoID,
-      published: new Date(video.meta.published * 1000)
-    })
+      percentSponsor,
+    });
   }
   return out;
 }
