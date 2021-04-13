@@ -162,11 +162,17 @@ export class UI extends React.Component {
     clearInterval(this.interval);
   }
   async init() {
-    this.initState = "connectingToDb";
-    const res = await createDbWorker();
-    this.db = res.db;
-    this.worker = res.worker;
-    this.dbConfig = res.config;
+    this.initState = "connecting to sqlite httpvfs database...";
+    try {
+      const res = await createDbWorker();
+      this.db = res.db;
+      this.worker = res.worker;
+      this.dbConfig = res.config;
+    } catch (e) {
+      console.error(e);
+      this.initState = `Error connecting to database: ${e}`;
+      return;
+    }
     const initialAuthor = new URLSearchParams(location.search).get("uploader");
     if (initialAuthor) this.setAuthor(initialAuthor);
     this.initState = "";
@@ -233,19 +239,28 @@ export class UI extends React.Component {
             <SponsorPlot data={this.data.segs} onHover={this.setFocussed} />
           </div>
         )}
-        {this.focussedVideo && <>Selected video: <VideoMetaDisplay video={this.focussedVideo} /></>}
+        {this.focussedVideo && (
+          <>
+            Selected video: <VideoMetaDisplay video={this.focussedVideo} />
+          </>
+        )}
         <footer style={{ marginTop: "5em", color: "gray" }}>
-          <div>{this.stats ? (
-            <SqliteStats
-              stats={this.stats}
-              lastUpdated={this.dbConfig.lastUpdated}
-            />
-          ) : (
-            ""
-          )}{" "}
+          <div>
+            {this.stats ? (
+              <SqliteStats
+                stats={this.stats}
+                lastUpdated={this.dbConfig.lastUpdated}
+              />
+            ) : (
+              ""
+            )}{" "}
           </div>
-          <div>Source Code: <a href="https://github.com/phiresky/youtube-sponsorship-stats/">https://github.com/phiresky/youtube-sponsorship-stats/</a></div>
-
+          <div>
+            Source Code:{" "}
+            <a href="https://github.com/phiresky/youtube-sponsorship-stats/">
+              https://github.com/phiresky/youtube-sponsorship-stats/
+            </a>
+          </div>
         </footer>
       </div>
     );

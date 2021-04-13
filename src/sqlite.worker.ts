@@ -1,6 +1,6 @@
 import * as Comlink from "comlink";
-import wasmfile from "../sql.js/dist/sql-wasm-debug.wasm";
-import initSqlJs from "../sql.js/dist/sql-wasm-debug.js";
+import wasmfile from "../sql.js/dist/sql-wasm.wasm";
+import initSqlJs from "../sql.js/dist/sql-wasm.js";
 import { createLazyFile, RangeMapper } from "./lazyFile";
 import { getSyntheticTrailingComments } from "typescript";
 import { Database } from "sql.js";
