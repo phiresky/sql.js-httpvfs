@@ -4,9 +4,9 @@
 ; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
 ;
 [subrepo]
-	remote = https://github.com/sql-js/sql.js
+	remote = git@github.com:phiresky/sql.js.git
 	branch = master
-	commit = f5d9f5482c52870b41e00d1ab9de3834b4c8b8c8
-	parent = 56c6ca1d1e59c7961b761989701315977522b6fa
+	commit = 837d25db2fa248033016f08cd395989a0794ad18
+	parent = 2eb5fdc1679729d99993ea0abdd05ba5de27b83a
 	method = merge
 	cmdver = 0.4.3
