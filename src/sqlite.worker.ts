@@ -64,7 +64,8 @@ const mod = {
       fileLength: p.databaseLengthBytes,
     });
 
-    this.db = new sql.UrlDatabase(filename, lazyFile);
+    this.db = new sql.CustomDatabase(filename);
+    (this.db as any).lazyFile = lazyFile;
 
     return this.db!;
   },
