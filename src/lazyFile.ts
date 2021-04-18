@@ -24,13 +24,15 @@ class LazyUint8Array {
   totalRequests = 0;
   _length?: number;
 
-  lastEnd = 0;
+  lastChunk = 0;
   speed = 1;
   _chunkSize: number;
   rangeMapper: RangeMapper;
+  maxSpeed: number
 
   constructor(config: LazyFileConfig) {
     this._chunkSize = config.requestChunkSize;
+    this.maxSpeed = 1024 * 1024 / this._chunkSize; // max 1MiB at once
     this.rangeMapper = config.rangeMapper;
     if (config.fileLength) {
       this._length = config.fileLength;
@@ -48,8 +50,9 @@ class LazyUint8Array {
     const start = chunkNum * this.chunkSize;
 
     if (typeof this.chunks[chunkNum] === "undefined") {
-      if (this.lastEnd === start - 1) {
-        this.speed = Math.min(64, this.speed * 2);
+      // double the fetching chunk size if the wanted chunk would be within the next fetch request
+      if (chunkNum >= this.lastChunk + 1 && chunkNum <= this.lastChunk + this.speed * 2) {
+        this.speed = Math.min(this.maxSpeed, this.speed * 2);
       } else {
         this.speed = 1;
       }
@@ -57,7 +60,7 @@ class LazyUint8Array {
       let endByte = (chunkNum + chunksToFetch) * this.chunkSize - 1; // including this byte
       endByte = Math.min(endByte, this.length - 1); // if datalength-1 is selected, this is the last block
 
-      this.lastEnd = endByte;
+      this.lastChunk = chunkNum + chunksToFetch - 1;
       const buf = this.doXHR(start, endByte);
       for (let i = 0; i < chunksToFetch; i++) {
         const curChunk = chunkNum + i;

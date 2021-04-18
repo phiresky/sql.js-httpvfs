@@ -4,10 +4,10 @@ const BundleAnalyzerPlugin = require("webpack-bundle-analyzer")
 
 const ts = {
   loader: "ts-loader",
-  options: { transpileOnly: true },
+  options: { transpileOnly: false },
 };
 module.exports = {
-  entry: "./src",
+  entry: "./src/db",
   // mode:,
   devtool: "source-map",
   module: {
@@ -36,6 +36,9 @@ module.exports = {
     filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
     assetModuleFilename: "[name]-[hash][ext][query]",
+    library: {
+      type: "umd"
+    }
   },
   stats: {
     children: true,
@@ -44,6 +47,11 @@ module.exports = {
     publicPath: "/dist",
     hot: false,
     liveReload: false,
+    https: true,
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    }
   },
   plugins: process.env.analyze ? [new BundleAnalyzerPlugin()]: [],
 };

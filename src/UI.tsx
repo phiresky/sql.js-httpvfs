@@ -1,77 +1,13 @@
 import { observer, useLocalObservable } from "mobx-react";
 import * as React from "react";
 import { Database } from "sql.js";
-import {
-  authorsSearch,
-  createDbWorker,
-  getForAuthor,
-  SponsorInfo,
-  SqliteWorker,
-  VideoMeta,
-} from "./db";
+import { createDbWorker, getForAuthor, SqliteWorker, toObjects } from "./db";
 import { action, makeAutoObservable, makeObservable, observable } from "mobx";
 import AsyncSelect from "react-select/async";
 import debounce from "debounce-promise";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js/lib/core";
 import { textChangeRangeIsUnchanged } from "typescript";
-
-const Plot = createPlotlyComponent(Plotly);
-
-function formatDuration(sec_num: number) {
-  const hours = Math.floor(sec_num / 3600);
-  const minutes = Math.floor((sec_num - hours * 3600) / 60);
-  const seconds = Math.round(sec_num - hours * 3600 - minutes * 60);
-
-  return (
-    String(hours).padStart(2, "0") +
-    ":" +
-    String(minutes).padStart(2, "0") +
-    ":" +
-    String(seconds).padStart(2, "0")
-  );
-}
-const SponsorPlot: React.FC<{
-  data: SponsorInfo[];
-  onHover: (m: SponsorInfo) => void;
-}> = observer((p) => {
-  return (
-    <Plot
-      style={{ width: "100%", maxWidth: "1200px", margin: "0 auto" }}
-      onClick={(e) => {
-        console.log("hover", e);
-        const element = p.data[e.points[0].pointIndex];
-        if (element) p.onHover(element);
-      }}
-      data={[
-        {
-          x: p.data.map((e) => new Date(e.meta.published * 1000)),
-          y: p.data.map((e) => e.percentSponsor / 100),
-
-          text: p.data.map(
-            (e) =>
-              `<b>${e.meta.title}</b><br>
-              published ${new Date(
-                e.meta.published * 1000
-              ).toLocaleDateString()}<br>
-              Length: ${formatDuration(e.meta.lengthSeconds)}<br>
-              Sponsor duration: ${formatDuration(
-                e.durationSponsor
-              )} (<b>${e.percentSponsor.toFixed(0)}%</b>)`
-          ),
-          hovertemplate: "%{text}",
-          type: "scatter",
-          mode: "markers",
-        },
-      ]}
-      layout={{
-        autosize: true,
-        yaxis: { tickformat: ",.0%", title: "Part that is Sponsorship" },
-        xaxis: { title: "Upload date" },
-      }}
-    />
-  );
-});
 
 type SqliteStats = {
   filename: string;
@@ -96,49 +32,71 @@ const SqliteStats: React.FC<{
   return (
     <>
       Sqlite stats: fetched {formatBytes(stats.totalFetchedBytes)} in{" "}
-      {stats.totalRequests} requests (DB size: {formatBytes(stats.totalBytes)},
-      updated: {new Date(lastUpdated * 1000).toLocaleDateString()})
+      {stats.totalRequests} requests (DB size: {formatBytes(stats.totalBytes)}
     </>
   );
 });
+/*async function query(db: Database, query: string, bindings?: any[]) {
+  return toObjects(await db.exec(query, bindings));
+}*/
 
-const VideoMetaDisplay: React.FC<{ video: SponsorInfo }> = observer(
-  ({ video }) => {
-    return (
-      <div>
-        <a href={`https://youtube.com/watch?v=${video.meta.videoID}`}>
-          <img
-            src={video.meta.maxresdefault_thumbnail}
-            width={200}
-            style={{ float: "left", margin: "0.5em" }}
-          ></img>
-          <h4>{video.meta.title}</h4>
-        </a>
-        {video.meta.viewCount} views
-        <br />
-        published {new Date(video.meta.published * 1000).toLocaleDateString()}
-        <br />
-        Length: {formatDuration(video.meta.lengthSeconds)}
-        <br />
-        Sponsor duration: {formatDuration(video.durationSponsor)} (
-        <b>{video.percentSponsor.toFixed(0)}%</b>)
-      </div>
-    );
+function stripLeadingWS(str: string) {
+  if (str[0] === "\n") str = str.slice(1);
+  const chars = Math.min(
+    ...str.split("\n").map((l) => /^\s*/.exec(l)![0].length)
+  );
+  return str
+    .split("\n")
+    .map((line) => line.slice(chars))
+    .join("\n");
+}
+
+const EvalBox: React.FC<{
+  code: string;
+  worker: SqliteWorker | null;
+}> = observer((p) => {
+  const [result, setResult] = React.useState("");
+  const [code, setCode] = React.useState(stripLeadingWS(p.code));
+  async function run() {
+    if (!p.worker) {
+      setResult("[worker not connected]");
+      return;
+    }
+    setResult("[...running]");
+    try {
+      const res = await p.worker.evalCode(code);
+      setResult(JSON.stringify(res, null, 2));
+    } catch (e) {
+      console.error("query", p, e);
+      setResult(`${e}`);
+    }
   }
-);
-
+  return (
+    <div>
+      <textarea
+        style={{
+          display: "inline-block",
+          border: "none",
+          fontFamily: "monospace",
+          width: "100%",
+        }}
+        value={code}
+        onChange={(e) => setCode(e.currentTarget.value)}
+      ></textarea>
+      <button onClick={run}>Run</button>
+      <div>
+        <pre>
+          <code>{result}</code>
+        </pre>
+      </div>
+    </div>
+  );
+});
 @observer
 export class UI extends React.Component {
   worker: SqliteWorker | null = null;
   db: Database | null = null;
   @observable initState = "Loading...";
-  @observable
-  data:
-    | { state: "noinput" }
-    | { state: "loading"; author: string }
-    | { state: "loaded"; author: string; segs: SponsorInfo[] } = {
-    state: "noinput",
-  };
   @observable
   stats: SqliteStats | null = null;
   @observable
@@ -164,7 +122,7 @@ export class UI extends React.Component {
   async init() {
     this.initState = "connecting to sqlite httpvfs database...";
     try {
-      const res = await createDbWorker();
+      const res = await createDbWorker("data/config.json");
       this.db = res.db;
       this.worker = res.worker;
       this.dbConfig = res.config;
@@ -177,73 +135,94 @@ export class UI extends React.Component {
     if (initialAuthor) this.setAuthor(initialAuthor);
     this.initState = "";
   }
-  async setAuthor(search: string) {
-    this.searchInput = search;
-    this.focussedVideo = null;
-    if (this.db) {
-      this.data = {
-        state: "loading",
-        author: search,
-      };
-      this.data = {
-        state: "loaded",
-        author: search,
-        segs: await getForAuthor(this.db, search),
-      };
-      console.log("data", this.data);
-      {
-        const searchParams = new URLSearchParams(location.search);
-        searchParams.set("uploader", search);
-        window.history.replaceState(null, document.title, "?" + searchParams);
-      }
-    }
-  }
-  async authorsSearch(search: string) {
-    if (this.db) {
-      return await authorsSearch(this.db, search);
-    }
-    return [];
-  }
-  authorsSearchDebounce = debounce(this.authorsSearch.bind(this), 250, {
-    leading: true,
-  });
-  @action
-  setFocussed = (e: SponsorInfo) => (this.focussedVideo = e);
 
   render() {
     if (this.initState) return <div>{this.initState}</div>;
     return (
       <div>
+        <EvalBox
+          code={`return db.query("select selector, textContent from dom where selector match 'div';")`}
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={`return db.query("insert into dom (parent, tagName, textContent) select 'ul#outtable1', 'li', long_name from wdi_country")`}
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={`return db.query("update dom set textContent='foobar' where selector match 'li'")`}
+          worker={this.worker}
+        ></EvalBox>
         <div>
-          Search for YouTuber:{" "}
-          <AsyncSelect<{ name: string }>
-            cacheOptions
-            inputValue={this.searchInput}
-            onInputChange={(e) => (this.searchInput = e)}
-            loadOptions={this.authorsSearchDebounce}
-            getOptionLabel={(e) => e.name}
-            getOptionValue={(e) => e.name}
-            onChange={(e) => e && this.setAuthor(e.name)}
-          />
+          <ul id="outtable1"></ul>
         </div>
-        {this.data.state === "noinput" ? (
-          <></>
-        ) : this.data.state === "loading" ? (
-          <div>Loading videos for author "{this.data.author}"</div>
-        ) : (
-          <div>
-            <p>
-              Found {this.data.segs.length} videos with sponsorships from{" "}
-              {this.data.author}
-            </p>{" "}
-            <SponsorPlot data={this.data.segs} onHover={this.setFocussed} />
-          </div>
-        )}
-        {this.focussedVideo && (
-          <>
-            Selected video: <VideoMetaDisplay video={this.focussedVideo} />
-          </>
-        )}
+        <EvalBox
+          code={`return db.query("select textContent from dom where querySelector = 'div';")`}
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={`return db.exec("select name from pragma_table_info('wdi_country')")`}
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={
+            'return db.exec("select count(*) as num_countries from wdi_country")'
+          }
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={
+            'return db.exec("select country_code, long_name, currency_unit from wdi_country limit 5")'
+          }
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={
+            'return db.exec("select series_code, indicator_name from wdi_series order by random() limit 10")'
+          }
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={`
+              
+              db.create_function("is_interesting", countryCode => ["USA", "DEU"].includes(countryCode));
+              return db.exec("select long_name from wdi_country where is_interesting(country_code) limit 10")
+          `}
+          worker={this.worker}
+        ></EvalBox>
+        <EvalBox
+          code={`
+              return db.exec(${"`"}select country_code, indicator_code, max(year) as year from wdi_data
+              where
+                indicator_code = (select series_code from wdi_series where indicator_name = 'Literacy rate, youth total (% of people ages 15-24)')
+                and year > 2010
+                group by country_code${"`"})
+          `}
+          worker={this.worker}
+        />
+        <EvalBox
+          code={`
+              return db.exec(${"`"}select series_code from wdi_series where indicator_name = 'Literacy rate, youth total (% of people ages 15-24)'${"`"})
+          `}
+          worker={this.worker}
+        />
+        <EvalBox
+          code={`
+              return db.exec(${"`"}
+                with newest_data as (
+                  select country_code, indicator_code, max(year) as year from wdi_data
+                  where
+                    indicator_code = (select series_code from wdi_series where indicator_name = 'Literacy rate, youth total (% of people ages 15-24)')
+                    and year > 2010
+                    group by country_code
+                )
+                select wdi_data.country_code, value from wdi_data, newest_data
+                where wdi_data.indicator_code = newest_data.indicator_code and wdi_data.country_code = newest_data.country_code and wdi_data.year = newest_data.year
+                order by value asc limit 10
+              ${"`"})
+          `}
+          worker={this.worker}
+        />
+
         <footer style={{ marginTop: "5em", color: "gray" }}>
           <div>
             {this.stats ? (

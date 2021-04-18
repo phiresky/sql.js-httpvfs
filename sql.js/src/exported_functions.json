@@ -28,6 +28,7 @@
 "_sqlite3_finalize",
 "_sqlite3_close_v2",
 "_sqlite3_create_function_v2",
+"_sqlite3_create_module_v2",
 "_sqlite3_value_bytes",
 "_sqlite3_value_type",
 "_sqlite3_value_text",
@@ -41,5 +42,7 @@
 "_sqlite3_result_int",
 "_sqlite3_result_int64",
 "_sqlite3_result_error",
+"_sqlite3_declare_vtab",
+"_sqlite3_malloc",
 "_RegisterExtensionFunctions"
 ]

@@ -41,6 +41,8 @@ EMFLAGS = \
 	-s NODEJS_CATCH_EXIT=0 \
 	-s NODEJS_CATCH_REJECTION=0
 
+#	-s ASYNCIFY=1 \
+#	-s ASYNCIFY_IMPORTS='["sqlite3VdbeExec"]'
 EMFLAGS_ASM = \
 	-s WASM=0
 
@@ -60,7 +62,8 @@ EMFLAGS_OPTIMIZED= \
 EMFLAGS_DEBUG = \
 	-s INLINING_LIMIT=10 \
 	-s ASSERTIONS=1 \
-	-O1
+	-s SAFE_HEAP=1 \
+	-O0
 
 BITCODE_FILES = out/sqlite3.bc out/extension-functions.bc
 

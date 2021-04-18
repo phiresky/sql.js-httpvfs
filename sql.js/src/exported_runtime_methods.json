@@ -3,5 +3,11 @@
 "stackAlloc",
 "stackSave",
 "stackRestore",
-"UTF8ToString"
+"UTF8ToString",
+"stringToUTF8",
+"lengthBytesUTF8",
+"ccall",
+"setValue",
+"getValue",
+"addFunction"
 ]

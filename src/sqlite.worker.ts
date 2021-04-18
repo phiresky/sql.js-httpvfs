@@ -1,9 +1,10 @@
 import * as Comlink from "comlink";
-import wasmfile from "../sql.js/dist/sql-wasm.wasm";
-import initSqlJs from "../sql.js/dist/sql-wasm.js";
+import wasmfile from "../sql.js/dist/sql-wasm-debug.wasm";
+import initSqlJs from "../sql.js/dist/sql-wasm-debug.js";
 import { createLazyFile, RangeMapper } from "./lazyFile";
 import { getSyntheticTrailingComments } from "typescript";
 import { Database } from "sql.js";
+import { SeriesVtab } from "./vtab";
 
 // https://gist.github.com/frankier/4bbc85f65ad3311ca5134fbc744db711
 function initTransferHandlers(sql: typeof import("sql.js")) {
@@ -18,10 +19,7 @@ function initTransferHandlers(sql: typeof import("sql.js")) {
       Comlink.expose(obj, port1);
       return [port2, [port2]];
     },
-    deserialize: (port: MessagePort) => {
-      port.start();
-      return Comlink.wrap(port);
-    },
+    deserialize: (port: MessagePort) => {},
   });
 }
 
@@ -33,6 +31,20 @@ async function init() {
   return sql;
 }
 const sqljs = init();
+
+export function toObjects<T>(res: QueryExecResult[]): T[] {
+  const r = res[0];
+  if (!r) return [];
+  return r.values.map((v) => {
+    const o: any = {};
+    for (let i = 0; i < r.columns.length; i++) {
+      o[r.columns[i]] = v[i];
+    }
+    return o as T;
+  });
+}
+
+
 export type SplitFileConfig = {
   lastUpdated: number;
   urlPrefix: string;
@@ -66,6 +78,8 @@ const mod = {
 
     this.db = new sql.CustomDatabase(filename);
     (this.db as any).lazyFile = lazyFile;
+    this.db.create_vtab(SeriesVtab);
+    this.db.query = (...args) => toObjects(this.db!.exec(...args));
 
     return this.db!;
   },
@@ -79,6 +93,11 @@ const mod = {
       totalRequests: db.lazyFile.contents.totalRequests,
     };
   },
+  async evalCode(code: string) {
+    return await eval(`(async function (db) {
+      ${code}
+    })`)(this.db);
+  }
 };
 export type SqliteMod = typeof mod;
 Comlink.expose(mod);

@@ -167,6 +167,13 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
         ["number"]
     );
     var sqlite3_finalize = cwrap("sqlite3_finalize", "number", ["number"]);
+    var sqlite3_create_module_v2 = cwrap(
+        "sqlite3_create_module_v2",
+        "number",
+        [
+            "number", "string", "number", "number", "number"
+        ]
+    )
     var sqlite3_create_function_v2 = cwrap(
         "sqlite3_create_function_v2",
         "number",
@@ -225,6 +232,12 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
         "",
         ["number", "string", "number"]
     );
+    var sqlite3_malloc = cwrap(
+        "sqlite3_malloc",
+        "number",
+        ["number"]
+    );
+    Module["sqlite3_malloc"] = sqlite3_malloc;
     var registerExtensionFunctions = cwrap(
         "RegisterExtensionFunctions",
         "number",
@@ -1094,6 +1107,7 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
 
     /** Analyze a result code, return null if no error occured, and throw
     an error with a descriptive message otherwise
+    @param {int} returnCode 
     @nodoc
      */
     Database.prototype["handleError"] = function handleError(returnCode) {
@@ -1102,7 +1116,7 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
             return null;
         }
         errmsg = sqlite3_errmsg(this.db);
-        throw new Error(errmsg);
+        throw new Error("SQLite: " + errmsg);
     };
 
     /** Returns the number of changed rows (modified, inserted or deleted)
@@ -1132,31 +1146,9 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
     ) {
         function wrapped_func(cx, argc, argv) {
             var result;
-            function extract_blob(ptr) {
-                var size = sqlite3_value_bytes(ptr);
-                var blob_ptr = sqlite3_value_blob(ptr);
-                var blob_arg = new Uint8Array(size);
-                for (var j = 0; j < size; j += 1) {
-                    blob_arg[j] = HEAP8[blob_ptr + j];
-                }
-                return blob_arg;
-            }
             var args = [];
             for (var i = 0; i < argc; i += 1) {
-                var value_ptr = getValue(argv + (4 * i), "i32");
-                var value_type = sqlite3_value_type(value_ptr);
-                var arg;
-                if (
-                    value_type === SQLITE_INTEGER
-                    || value_type === SQLITE_FLOAT
-                ) {
-                    arg = sqlite3_value_double(value_ptr);
-                } else if (value_type === SQLITE_TEXT) {
-                    arg = sqlite3_value_text(value_ptr);
-                } else if (value_type === SQLITE_BLOB) {
-                    arg = extract_blob(value_ptr);
-                } else arg = null;
-                args.push(arg);
+                args.push(Module.extract_value(argv + 4 * i));
             }
             try {
                 result = func.apply(null, args);
@@ -1164,33 +1156,8 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
                 sqlite3_result_error(cx, error, -1);
                 return;
             }
-            switch (typeof result) {
-                case "boolean":
-                    sqlite3_result_int(cx, result ? 1 : 0);
-                    break;
-                case "number":
-                    sqlite3_result_double(cx, result);
-                    break;
-                case "string":
-                    sqlite3_result_text(cx, result, -1, -1);
-                    break;
-                case "object":
-                    if (result === null) {
-                        sqlite3_result_null(cx);
-                    } else if (result.length != null) {
-                        var blobptr = allocate(result, ALLOC_NORMAL);
-                        sqlite3_result_blob(cx, blobptr, result.length, -1);
-                        _free(blobptr);
-                    } else {
-                        sqlite3_result_error(cx, (
-                            "Wrong API use : tried to return a value "
-                            + "of an unknown type (" + result + ")."
-                        ), -1);
-                    }
-                    break;
-                default:
-                    sqlite3_result_null(cx);
-            }
+            Module.set_return_value(cx, result);
+            
         }
         if (Object.prototype.hasOwnProperty.call(this.functions, name)) {
             removeFunction(this.functions[name]);
@@ -1213,6 +1180,115 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
         ));
         return this;
     };
+
+    function extract_blob(ptr) {
+        var size = sqlite3_value_bytes(ptr);
+        var blob_ptr = sqlite3_value_blob(ptr);
+        var blob_arg = new Uint8Array(size);
+        for (var j = 0; j < size; j += 1) {
+            blob_arg[j] = HEAP8[blob_ptr + j];
+        }
+        return blob_arg;
+    }
+    Module["extract_value"] = function extract_value(ptr) {
+        var value_ptr = getValue(ptr, "i32");
+        var value_type = sqlite3_value_type(value_ptr);
+        var arg;
+        if (
+            value_type === SQLITE_INTEGER
+            || value_type === SQLITE_FLOAT
+        ) {
+            arg = sqlite3_value_double(value_ptr);
+        } else if (value_type === SQLITE_TEXT) {
+            arg = sqlite3_value_text(value_ptr);
+        } else if (value_type === SQLITE_BLOB) {
+            arg = extract_blob(value_ptr);
+        } else arg = null;
+        return arg;
+    }
+    Module["set_return_value"] = function set_return_value(cx, result) {
+        switch (typeof result) {
+            case "boolean":
+                sqlite3_result_int(cx, result ? 1 : 0);
+                break;
+            case "number":
+                sqlite3_result_double(cx, result);
+                break;
+            case "string":
+                sqlite3_result_text(cx, result, -1, -1);
+                break;
+            case "object":
+                if (result === null) {
+                    sqlite3_result_null(cx);
+                } else if (result.length != null) {
+                    var blobptr = allocate(result, ALLOC_NORMAL);
+                    sqlite3_result_blob(cx, blobptr, result.length, -1);
+                    _free(blobptr);
+                } else {
+                    sqlite3_result_error(cx, (
+                        "Wrong API use : tried to return a value "
+                        + "of an unknown type (" + result + ")."
+                    ), -1);
+                }
+                break;
+            default:
+                sqlite3_result_null(cx);
+        }
+    }
+
+    Database.prototype.create_vtab = function create_vtab(cons) {
+        const ele = new cons(Module, this);
+        const module_things = {
+            iVersion: null,
+            xCreate: "ptr",
+            xConnect: "ptr",
+            xBestIndex: "ptr",
+            xDisconnect: "ptr",
+            xDestroy: "ptr",
+            xOpen: "ptr",
+            xClose: "ptr",
+            xFilter: "ptr",
+            xNext: "ptr",
+            xEof: "ptr",
+            xColumn: "ptr",
+            xRowid: "ptr",
+            xUpdate: "ptr",
+            xBegin: "ptr",
+            xSync: "ptr",
+            xCommit: "ptr",
+            xRollback: "ptr",
+            xFindFunction: "ptr",
+            xRename: "ptr",
+            xSavepoint: "ptr",
+            xRelease: "ptr",
+            xRollbackTo: "ptr",
+            xShadowName: "ptr",
+          }
+          
+        const sqlite3_module = _malloc(Object.keys(module_things).length * 4); // 24 ints / pointers
+        let i = 0;
+        for (const k in module_things) {
+            let tgt = ele[k] || 0;
+            let type = "i32";
+            if(module_things[k] && ele[k]) {
+                const fn = ele[k].bind(ele);
+                var sig = Array(1+ fn.length).fill("i").join("");
+                if (false && k === "xFilter") {
+                    tgt = addFunction((...args) => {
+                        return Asyncify.handleAsync(async () => fn(...args));
+                    }, sig);
+                } else {
+                    tgt = addFunction(fn, sig);
+                }
+                type = "*";
+            }
+            console.log("adding at", i, k, tgt, sig);
+            setValue(sqlite3_module + i * 4, tgt, type);// setValue(sqlite3_module + i * 4, addFunction(() => console.log("called "+ k), "i"));
+            i++;
+        }
+        console.log(Module.HEAPU8.slice(sqlite3_module, sqlite3_module + i * 4));
+        this.handleError(sqlite3_create_module_v2(this.db, ele.name, sqlite3_module, 0, 0));
+    }
 
     // export Database to Module
     Module.Database = Database;

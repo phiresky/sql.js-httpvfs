@@ -1,19 +1,16 @@
 set -eu
 cd "$(dirname "$0")"
-rm -rf dist/data
-mkdir -p dist/data
-cat create_db.sql | sqlite3 -cmd '.echo on' dist/data/db.sqlite3
-lastUpdated="$(sqlite3 dist/data/db.sqlite3 'select max(published) from videoData')"
 
-bytes="$(stat --printf="%s" dist/data/db.sqlite3)"
+
+bytes="$(stat --printf="%s" "$1")"
 serverChunkSize=$((50 * 1024 * 1024))
 suffixLength=3
-split dist/data/db.sqlite3 --bytes=$serverChunkSize dist/data/db.sqlite3. --suffix-length=$suffixLength --numeric-suffixes
-rm dist/data/db.sqlite3
+rm dist/data/*
+split "$1" --bytes=$serverChunkSize "dist/data/db.sqlite3." --suffix-length=$suffixLength --numeric-suffixes
+requestChunkSize="$(sqlite3 "$1" 'pragma page_size')"
 echo '
 {
-    "requestChunkSize": 4096,
-    "lastUpdated": '$lastUpdated',
+    "requestChunkSize": '$requestChunkSize',
     "databaseLengthBytes": '$bytes',
     "serverChunkSize": '$serverChunkSize',
     "urlPrefix": "db.sqlite3.",

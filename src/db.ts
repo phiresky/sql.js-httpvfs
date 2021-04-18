@@ -4,13 +4,12 @@ import SqliteWorker, { SplitFileConfig } from "./sqlite.worker";
 import { chooseSegments, DBSegment } from "./util";
 import { SqliteMod } from "./sqlite.worker.js";
 import { Database, QueryExecResult } from "sql.js";
+import { DomRow, MainThreadRequest } from "./vtab";
 
 Comlink.transferHandlers.set("WORKERSQLPROXIES", {
   canHandle: (obj) => false,
   serialize(obj) {
-    const { port1, port2 } = new MessageChannel();
-    Comlink.expose(obj, port1);
-    return [port2, [port2]];
+    throw Error("no");
   },
   deserialize: (port: MessagePort) => {
     port.start();
@@ -18,149 +17,152 @@ Comlink.transferHandlers.set("WORKERSQLPROXIES", {
   },
 });
 export type SqliteWorker = Comlink.Remote<SqliteMod>;
-export async function createDbWorker() {
-  const sqlite = Comlink.wrap<SqliteMod>(new SqliteWorker());
+interface  DatabaseOutput extends Database {
+  worker: Comlink.Remote<SqliteMod>
+}
+export async function createDbWorker(databaseConfigUrl: string) {
+  const worker: Worker = new SqliteWorker();
+  const sqlite = Comlink.wrap<SqliteMod>(worker);
 
-  const chunkSize = 4096;
-  const configUrl = new URL("data/config.json", location.href);
-  const config: SplitFileConfig = await fetch(configUrl.toString()).then(e => e.json());
+  const configUrl = new URL(databaseConfigUrl, location.href);
+  const config: SplitFileConfig = await fetch(configUrl.toString()).then((e) =>
+    e.json()
+  );
   const db = await sqlite.SplitFileHttpDatabase({
     ...config,
     urlPrefix: new URL(config.urlPrefix, configUrl).toString(),
   });
+  db.worker = sqlite;
   const pageSizeResp = await db.exec("pragma page_size");
   const pageSize = pageSizeResp[0].values[0][0];
-  if (pageSize !== chunkSize)
+  if (pageSize !== config.requestChunkSize)
     console.warn(
-      `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${chunkSize}`
+      `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${config.requestChunkSize}`
     );
 
+  worker.addEventListener("message", async (ev) => {
+    if (ev.data && ev.data.action === "eval") {
+      const metaArray = new Int32Array(ev.data.notify, 0, 2);
+      const dataArray = new Uint8Array(ev.data.notify, 2 * 4);
+      let response;
+      try {
+        response = { ok: await handleRequest(ev.data.request) };
+      } catch (e) {
+        console.error("worker request error", ev.data.request, e);
+        response = { err: String(e) };
+      }
+      const text = new TextEncoder().encode(JSON.stringify(response));
+      dataArray.set(text, 0); // need to copy here because:
+      // sadly TextEncoder.encodeInto: Argument 2 can't be a SharedArrayBuffer or an ArrayBufferView backed by a SharedArrayBuffer [AllowShared]
+      // otherwise this would be better:
+      /*const encodeRes = new TextEncoder().encodeInto(response, data);
+      if (encodeRes.read !== response.length) {
+        console.log(encodeRes, response.length)
+        throw Error(`not enough space for response: ${response.length} > ${data.byteLength}`);
+      }*/
+      metaArray[1] = text.length;
+      Atomics.notify(metaArray, 0);
+    }
+  });
   return { config, worker: sqlite, db };
 }
-
-async function testLoop(metaDb: Database) {
-  const uploader = "Adam Ragusea";
-
-  const videos = await metaDb.prepare(
-    "select * from videoData where author = ? limit 20"
-  );
-  await videos.bind2([uploader]);
-  // const res = await videos.bind([uploader]);
-  // console.log("bind res", res);
-  while (await videos.step()) {
-    console.log("got", await videos.get());
-  }
-  return;
-}
-async function go() {
-  Object.assign(window, { s: sqlite });
-
-  await getForVideos(await createDbWorker(), "Adam Ragusea");
-}
-
-function toObjects<T>(res: QueryExecResult[]): T[] {
-  const r = res[0];
-  if (!r) return [];
-  return r.values.map((v) => {
-    const o: any = {};
-    for (let i = 0; i < r.columns.length; i++) {
-      o[r.columns[i]] = v[i];
+function getUniqueSelector(elm: Element) {
+  if (elm.tagName === "BODY") return "body";
+  const names = [];
+  while (elm.parentElement && elm.tagName !== "BODY") {
+    if (elm.id) {
+      // assume id is unique (which it isn't)
+      names.unshift("#" + elm.id);
+      break;
+    } else {
+      let c = 1;
+      let e = elm;
+      while (e.previousElementSibling) {
+        e = e.previousElementSibling;
+        c++;
+      }
+      names.unshift(elm.tagName.toLowerCase() + ":nth-child(" + c + ")");
     }
-    return o as T;
-  });
+    elm = elm.parentElement;
+  }
+  return names.join(" > ");
 }
-export type VideoMeta = {
-  videoID: string;
-  title: string;
-  maxresdefault_thumbnail: string;
-  published: number;
-  publishedText: string;
-  viewCount: number;
-  likeCount: number;
-  author: string;
-  authorURL: string;
-  channelThumbnail: string;
-  lengthSeconds: number;
-  category: string;
-};
-export async function authorsSearch(db: Database, author: string) {
-  try {
-    const query_inner = author
-      .split(" ")
-      .map((n) => n.replace(/"/g, ""))
-      .map((e) => `"${e}"*`)
-      .join(" ");
-    const query = `NEAR(${query_inner})`;
-    const sql_query = `select name from authors_search where name match ? limit 20`;
-    console.log("executing search query", query, sql_query);
-    const ret = toObjects<{ name: string }>(await db.exec(sql_query, [query]));
-    return ret;
-  } catch (e) {
-    console.error("authorsSearch", e);
-    throw e;
-  }
+
+function keys<T>(o: T): (keyof T)[] {
+  return Object.keys(o) as (keyof T)[];
 }
-export type SponsorInfo = {
-  meta: VideoMeta;
-  durationSponsor: number;
-  percentSponsor: number;
-};
-export async function getForAuthor(
-  db: Database,
-  author: string
-): Promise<SponsorInfo[]> {
-  /*await db.exec(`select s.rowid from sponsorTimes s
-  join videoData v on s.videoid = v.videoid
-  
-  where v.author = 'Adam Ragusea'`);*/
-
-  const videos = toObjects<VideoMeta>(
-    await db.exec(
-      "select * from videoData where author = ? order by published asc",
-      [author]
-    )
-  );
-  console.log("videos", videos);
-  const sponsorTimes = toObjects<DBSegment>(
-    await db.exec(
-      // "select videoData.videoID, published, lengthSeconds, title from videoData join sponsorTimes on sponsorTimes.videoID = videoData.videoID where author = ? order by sponsorTimes.rowid asc",
-      // [author]
-      "select * from sponsorTimes where authorID = (select id from authors where name = ?) and not shadowHidden and category = 'sponsor' order by videoID, startTime",
-      [author]
-    )
-  ); // select sponsorTimes.rowid, sponsorTimes.videoID from videoData join sponsorTimes on sponsorTimes.videoID = videoData.videoID where author = 'Adam Ragusea';
-  console.log("sponsorTimes", sponsorTimes);
-
-  const videoMap = new Map<
-    string,
-    { meta: VideoMeta; segments: DBSegment[] }
-  >();
-  for (const video of videos) {
-    videoMap.set(video.videoID, { meta: video, segments: [] });
-  }
-  for (const segment of sponsorTimes) {
-    const tgt = videoMap.get(segment.videoID);
-    if (!tgt) {
-      console.warn("no metadata for video", segment.videoID);
-      continue;
-    }
-    tgt.segments.push(segment);
-  }
-  //const videos = [{videoID: "gOQNRvJbpmk", lengthSeconds :  1000}];
-  const out = [];
-  for (const [_, video] of videoMap) {
-    const sponsorTimes = video.segments;
-    const segments = chooseSegments(sponsorTimes.filter((s) => s.votes > -1));
-    const duration = segments
-      .map((m) => m.endTime - m.startTime)
-      .reduce((a, b) => a + b, 0);
-    const total = video.meta.lengthSeconds;
-    const percentSponsor = (duration / total) * 100;
-    out.push({
-      meta: video.meta,
-      durationSponsor: duration,
-      percentSponsor,
+async function handleRequest(req: MainThreadRequest) {
+  console.log("dom vtable request", req);
+  if (req.type === "select") {
+    return [...document.querySelectorAll(req.selector)].map((e) => {
+      const out: Partial<DomRow> = {};
+      for (const column of req.columns) {
+        if (column === "selector") {
+          out.selector = getUniqueSelector(e);
+        } else if (column === "parent") {
+          out.parent = getUniqueSelector(e.parentElement);
+        } else {
+          out[column] = e[column];
+        }
+      }
+      return out;
     });
+  } else if (req.type === "insert") {
+    if (!req.value.parent)
+      throw Error(`"parent" column must be set when inserting`);
+    const target = document.querySelectorAll(req.value.parent);
+    if (target.length === 0)
+      throw Error(`Parent element ${req.value.parent} could not be found`);
+    if (target.length > 1)
+      throw Error(
+        `Parent element ${req.value.parent} ambiguous (${target.length} results)`
+      );
+    const parent = target[0];
+    if (!req.value.tagName) throw Error(`tagName must be set for inserting`);
+    const ele = document.createElement(req.value.tagName);
+    const cantSet = ["idx"];
+    for (const i of keys(req.value)) {
+      if (req.value[i] !== null) {
+        if (i === "tagName" || i === "parent") continue;
+        if (i === "idx" || i === "selector") throw Error(`${i} can't be set`);
+
+        ele[i] = req.value[i] as any;
+      }
+    }
+    parent.appendChild(ele);
+  } else if (req.type === "update") {
+    const targetElement = document.querySelector(req.value.selector!);
+    if (!targetElement) throw Error(`Element ${req.value.selector} not found!`);
+    const toSet: (
+      | "innerHTML"
+      | "id"
+      | "textContent"
+      | "innerHTML"
+      | "outerHTML"
+      | "className"
+    )[] = [];
+    for (const k of keys(req.value)) {
+      const v = req.value[k];
+      if (k === "parent") {
+        if (v !== getUniqueSelector(targetElement.parentElement!)) {
+          const targetParent = document.querySelectorAll(v);
+          if (targetParent.length !== 1)
+            throw Error(
+              `Invalid target parent: found ${targetParent.length} matches`
+            );
+          targetParent[0].appendChild(targetElement);
+        }
+        continue;
+      }
+      if (k === "idx" || k === "selector") continue;
+      if (v !== targetElement[k]) {
+        console.log("SETTING ", k, targetElement[k], "->", v);
+        if (k === "tagName") throw Error("can't change tagName");
+        toSet.push(k); // defer setting to prevent setting multiple interdependent values (e.g. textContent and innerHTML)
+      }
+    }
+    for (const k of toSet) {
+      targetElement[k] = req.value[k];
+    }
   }
-  return out;
 }
