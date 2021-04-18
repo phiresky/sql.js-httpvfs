@@ -1,3 +1,4 @@
+/// <reference lib="webworker" />
 import { Database } from "sql.js";
 /*
  * don't look at this code
@@ -32,7 +33,7 @@ interface sqlite3_vtab_cursor {
 }
 interface sqlite3_context {}
 interface sqlite3_value {}
-interface sqlite3_module {
+export interface sqlite3_module {
   iVersion: int;
   xCreate?(
     conn: Ptr<"sqliteconn">,
@@ -119,7 +120,7 @@ const SQLITE_OK = 0;
 const SQLITE_MISUSE = 21;
 
 // see exported_runtime_methods.json
-interface YourOwnEmscriptenModule extends EmscriptenModule {
+export interface SqljsEmscriptenModuleType extends EmscriptenModule {
   ccall: typeof ccall;
   setValue: typeof setValue;
   getValue: typeof getValue;
@@ -132,6 +133,7 @@ interface YourOwnEmscriptenModule extends EmscriptenModule {
     ptr: Ptr<sqlite3_context>,
     value: string | number | boolean | null
   ) => void;
+  sqlite3_malloc: (size: int) => Ptr<void>,
 }
 
 type Cursor = {
@@ -152,7 +154,7 @@ enum Columns {
   querySelector,
 }
 const columnNames = Object.keys(Columns)
-  .map((key) => Columns[key])
+  .map((key) => Columns[key as any])
   .filter((value) => typeof value === "string");
 export interface DomRow {
   idx: number;
@@ -162,18 +164,18 @@ export interface DomRow {
   innerHTML: string;
   outerHTML: string;
   className: string | null;
-  parent: string;
+  parent: string | null;
   selector: string;
 }
 function rowToObject(row: any[]): DomRow {
-  const out = {};
+  const out: any = {};
   for (let i = 0; i < row.length; i++) {
     out[Columns[i]] = row[i];
   }
   return out;
 }
 export type MainThreadRequest =
-  | { type: "select"; selector: string; columns: string[] }
+  | { type: "select"; selector: string; columns: (keyof DomRow)[] }
   | { type: "delete"; selector: string }
   | { type: "update"; value: Partial<DomRow> }
   | { type: "insert"; value: Partial<DomRow> };
@@ -186,7 +188,7 @@ function doAsyncRequestToMainThread(request: MainThreadRequest) {
   const metaArray = new Int32Array(sab, 0, 2);
   metaArray[0] = 1;
   // send message to main thread
-  self.postMessage({
+  (self as DedicatedWorkerGlobalScope).postMessage({
     action: "eval",
     notify: sab,
     request,
@@ -204,7 +206,7 @@ export class SeriesVtab implements sqlite3_module {
   name = "dom";
   iVersion: number = 2;
   cursors = new Map<number, Cursor>();
-  constructor(private module: YourOwnEmscriptenModule, private db: Database) {
+  constructor(private module: SqljsEmscriptenModuleType, private db: Database) {
     console.log("cnostructed vfs");
   }
   getCursor(cursor: Ptr<sqlite3_vtab_cursor>): Cursor {
@@ -222,7 +224,7 @@ export class SeriesVtab implements sqlite3_module {
   ): SqliteStatus {
     console.log("xconnect!!");
 
-    const rc = this.db.handleError(
+    const rc = (this.db.handleError as any)(
       this.module.ccall(
         "sqlite3_declare_vtab",
         "number",
@@ -336,8 +338,8 @@ export class SeriesVtab implements sqlite3_module {
     cursor.querySelector = querySelector;
     const usedColumnsFlag = idxNum;
     const usedColumns = columnNames.filter(
-      (c) => usedColumnsFlag & (1 << Columns[c])
-    );
+      (c) => usedColumnsFlag & (1 << (Columns as any)[c])
+    ) as (keyof DomRow)[];
     console.log("used columns", usedColumns);
     cursor.elements = doAsyncRequestToMainThread({
       type: "select",
@@ -364,7 +366,7 @@ export class SeriesVtab implements sqlite3_module {
     const cursor = this.getCursor(cursorPtr);
     const ele = cursor.elements[cursor.index];
     if (Columns[column] in ele) {
-      this.module.set_return_value(ctx, ele[Columns[column]]);
+      this.module.set_return_value(ctx, (ele as any)[Columns[column]]);
     } else {
       switch (column) {
         case Columns.idx: {

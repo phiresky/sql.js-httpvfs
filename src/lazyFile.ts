@@ -91,11 +91,9 @@ class LazyUint8Array {
       throw new Error("Couldn't load " + url + ". Status: " + xhr.status);
     var datalength = Number(xhr.getResponseHeader("Content-length"));
 
-    var header;
-    var hasByteServing =
-      (header = xhr.getResponseHeader("Accept-Ranges")) && header === "bytes";
-    var usesGzip =
-      (header = xhr.getResponseHeader("Content-Encoding")) && header === "gzip";
+    console.log("hEADERS", xhr.getAllResponseHeaders());
+    var hasByteServing = xhr.getResponseHeader("Accept-Ranges") === "bytes";
+    var usesGzip = xhr.getResponseHeader("Content-Encoding") === "gzip";
 
     if (!hasByteServing) throw Error("server does not support byte serving");
 
@@ -164,7 +162,6 @@ class LazyUint8Array {
     }
   }
 }
-
 export function createLazyFile(
   FS: any,
   parent: string,
@@ -187,7 +184,7 @@ export function createLazyFile(
     },
   });
   // override each stream op with one that tries to force load the lazy file first
-  var stream_ops = {};
+  var stream_ops: any = {};
   var keys = Object.keys(node.stream_ops);
   keys.forEach(function (key) {
     var fn = node.stream_ops[key];
@@ -198,11 +195,11 @@ export function createLazyFile(
   });
   // use a custom read function
   stream_ops.read = function stream_ops_read(
-    stream,
-    buffer,
-    offset,
-    length,
-    position
+    stream: {node: {contents: LazyUint8Array}},
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position: number
   ) {
     FS.forceLoadFile(node);
     console.log(
@@ -211,17 +208,19 @@ export function createLazyFile(
     var contents = stream.node.contents;
     if (position >= contents.length) return 0;
     var size = Math.min(contents.length - position, length);
-    if (contents.slice) {
+    /*if (contents.slice) {
+      throw Error('impossible')
       // normal array
       for (var i = 0; i < size; i++) {
         buffer[offset + i] = contents[position + i];
       }
-    } else {
+    } else {*/
+      // TODO: optimize this to copy whole chunks at once
       for (var i = 0; i < size; i++) {
         // LazyUint8Array from sync binary XHR
-        buffer[offset + i] = contents.get(position + i);
+        buffer[offset + i] = contents.get(position + i)!;
       }
-    }
+   // }
     return size;
   };
   node.stream_ops = stream_ops;

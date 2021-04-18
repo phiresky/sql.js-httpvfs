@@ -1,13 +1,19 @@
-import * as Comlink from "comlink";
-import SqliteWorker, { SplitFileConfig } from "./sqlite.worker";
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
 
-import { chooseSegments, DBSegment } from "./util";
-import { SqliteMod } from "./sqlite.worker.js";
-import { Database, QueryExecResult } from "sql.js";
+// TODO: using comlink for all this is a pretty ugly hack
+import * as Comlink from "comlink";
+
+import {
+  LazyHttpDatabase,
+  SplitFileConfig,
+  SqliteComlinkMod,
+} from "./sqlite.worker";
+
 import { DomRow, MainThreadRequest } from "./vtab";
 
 Comlink.transferHandlers.set("WORKERSQLPROXIES", {
-  canHandle: (obj) => false,
+  canHandle: (obj): obj is unknown => false,
   serialize(obj) {
     throw Error("no");
   },
@@ -16,22 +22,33 @@ Comlink.transferHandlers.set("WORKERSQLPROXIES", {
     return Comlink.wrap(port);
   },
 });
-export type SqliteWorker = Comlink.Remote<SqliteMod>;
-interface  DatabaseOutput extends Database {
-  worker: Comlink.Remote<SqliteMod>
+export type SqliteWorker = Comlink.Remote<SqliteComlinkMod>;
+export interface WorkerHttpvfsDatabase
+  extends Comlink.Remote<LazyHttpDatabase> {
+  worker: Comlink.Remote<SqliteComlinkMod>;
+  config: SplitFileConfig;
 }
-export async function createDbWorker(databaseConfigUrl: string) {
-  const worker: Worker = new SqliteWorker();
-  const sqlite = Comlink.wrap<SqliteMod>(worker);
+export async function createDbWorker(
+  databaseConfigUrl: string,
+  workerUrl: string,
+  wasmUrl: string,
+): Promise<WorkerHttpvfsDatabase> {
+  const worker: Worker = new Worker(workerUrl);
+  const sqlite = Comlink.wrap<SqliteComlinkMod>(worker);
 
   const configUrl = new URL(databaseConfigUrl, location.href);
-  const config: SplitFileConfig = await fetch(configUrl.toString()).then((e) =>
-    e.json()
-  );
-  const db = await sqlite.SplitFileHttpDatabase({
+  const req = await fetch(configUrl.toString());
+
+  if (!req.ok)
+    throw Error(
+      `Could not load httpvfs config: ${req.status}: ${await req.text()}`
+    );
+  const config: SplitFileConfig = await req.json();
+
+  const db = ((await sqlite.SplitFileHttpDatabase(wasmUrl, {
     ...config,
     urlPrefix: new URL(config.urlPrefix, configUrl).toString(),
-  });
+  })) as unknown) as WorkerHttpvfsDatabase;
   db.worker = sqlite;
   const pageSizeResp = await db.exec("pragma page_size");
   const pageSize = pageSizeResp[0].values[0][0];
@@ -40,31 +57,33 @@ export async function createDbWorker(databaseConfigUrl: string) {
       `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${config.requestChunkSize}`
     );
 
-  worker.addEventListener("message", async (ev) => {
-    if (ev.data && ev.data.action === "eval") {
-      const metaArray = new Int32Array(ev.data.notify, 0, 2);
-      const dataArray = new Uint8Array(ev.data.notify, 2 * 4);
-      let response;
-      try {
-        response = { ok: await handleRequest(ev.data.request) };
-      } catch (e) {
-        console.error("worker request error", ev.data.request, e);
-        response = { err: String(e) };
-      }
-      const text = new TextEncoder().encode(JSON.stringify(response));
-      dataArray.set(text, 0); // need to copy here because:
-      // sadly TextEncoder.encodeInto: Argument 2 can't be a SharedArrayBuffer or an ArrayBufferView backed by a SharedArrayBuffer [AllowShared]
-      // otherwise this would be better:
-      /*const encodeRes = new TextEncoder().encodeInto(response, data);
-      if (encodeRes.read !== response.length) {
-        console.log(encodeRes, response.length)
-        throw Error(`not enough space for response: ${response.length} > ${data.byteLength}`);
-      }*/
-      metaArray[1] = text.length;
-      Atomics.notify(metaArray, 0);
+  worker.addEventListener("message", handleAsyncRequestFromWorkerThread);
+  return db;
+}
+
+async function handleAsyncRequestFromWorkerThread(ev: MessageEvent) {
+  if (ev.data && ev.data.action === "eval") {
+    const metaArray = new Int32Array(ev.data.notify, 0, 2);
+    const dataArray = new Uint8Array(ev.data.notify, 2 * 4);
+    let response;
+    try {
+      response = { ok: await handleDomVtableRequest(ev.data.request) };
+    } catch (e) {
+      console.error("worker request error", ev.data.request, e);
+      response = { err: String(e) };
     }
-  });
-  return { config, worker: sqlite, db };
+    const text = new TextEncoder().encode(JSON.stringify(response));
+    dataArray.set(text, 0); // need to copy here because:
+    // sadly TextEncoder.encodeInto: Argument 2 can't be a SharedArrayBuffer or an ArrayBufferView backed by a SharedArrayBuffer [AllowShared]
+    // otherwise this would be better:
+    /*const encodeRes = new TextEncoder().encodeInto(response, data);
+    if (encodeRes.read !== response.length) {
+      console.log(encodeRes, response.length)
+      throw Error(`not enough space for response: ${response.length} > ${data.byteLength}`);
+    }*/
+    metaArray[1] = text.length;
+    Atomics.notify(metaArray, 0);
+  }
 }
 function getUniqueSelector(elm: Element) {
   if (elm.tagName === "BODY") return "body";
@@ -91,7 +110,9 @@ function getUniqueSelector(elm: Element) {
 function keys<T>(o: T): (keyof T)[] {
   return Object.keys(o) as (keyof T)[];
 }
-async function handleRequest(req: MainThreadRequest) {
+async function handleDomVtableRequest(
+  req: MainThreadRequest
+): Promise<Partial<DomRow>[] | null> {
   console.log("dom vtable request", req);
   if (req.type === "select") {
     return [...document.querySelectorAll(req.selector)].map((e) => {
@@ -100,9 +121,15 @@ async function handleRequest(req: MainThreadRequest) {
         if (column === "selector") {
           out.selector = getUniqueSelector(e);
         } else if (column === "parent") {
-          out.parent = getUniqueSelector(e.parentElement);
+          if (e.parentElement) {
+            out.parent = e.parentElement
+              ? getUniqueSelector(e.parentElement)
+              : null;
+          }
+        } else if (column === "idx") {
+          // ignore
         } else {
-          out[column] = e[column];
+          out[column] = e[column] as string;
         }
       }
       return out;
@@ -130,6 +157,7 @@ async function handleRequest(req: MainThreadRequest) {
       }
     }
     parent.appendChild(ele);
+    return null;
   } else if (req.type === "update") {
     const targetElement = document.querySelector(req.value.selector!);
     if (!targetElement) throw Error(`Element ${req.value.selector} not found!`);
@@ -145,7 +173,7 @@ async function handleRequest(req: MainThreadRequest) {
       const v = req.value[k];
       if (k === "parent") {
         if (v !== getUniqueSelector(targetElement.parentElement!)) {
-          const targetParent = document.querySelectorAll(v);
+          const targetParent = document.querySelectorAll(v as string);
           if (targetParent.length !== 1)
             throw Error(
               `Invalid target parent: found ${targetParent.length} matches`
@@ -162,7 +190,10 @@ async function handleRequest(req: MainThreadRequest) {
       }
     }
     for (const k of toSet) {
-      targetElement[k] = req.value[k];
+      targetElement[k] = req.value[k] as string;
     }
+    return null;
+  } else {
+    throw Error(`unknown request ${req.type}`);
   }
 }

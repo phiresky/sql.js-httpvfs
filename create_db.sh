@@ -1,13 +1,14 @@
 set -eu
-cd "$(dirname "$0")"
 
+indb="$1"
+outdir="$2"
 
-bytes="$(stat --printf="%s" "$1")"
+bytes="$(stat --printf="%s" "$indb")"
 serverChunkSize=$((50 * 1024 * 1024))
 suffixLength=3
-rm dist/data/*
-split "$1" --bytes=$serverChunkSize "dist/data/db.sqlite3." --suffix-length=$suffixLength --numeric-suffixes
-requestChunkSize="$(sqlite3 "$1" 'pragma page_size')"
+rm -f "$outdir/db.sqlite3"*
+split "$indb" --bytes=$serverChunkSize "$outdir/db.sqlite3." --suffix-length=$suffixLength --numeric-suffixes
+requestChunkSize="$(sqlite3 "$indb" 'pragma page_size')"
 echo '
 {
     "requestChunkSize": '$requestChunkSize',
@@ -16,4 +17,4 @@ echo '
     "urlPrefix": "db.sqlite3.",
     "suffixLength": '$suffixLength'
 }
-' > dist/data/config.json
+' > "$outdir/config.json"

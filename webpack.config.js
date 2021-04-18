@@ -7,7 +7,7 @@ const ts = {
   options: { transpileOnly: false },
 };
 module.exports = {
-  entry: "./src/db",
+  entry: { index: "./src", "sqlite.worker": "./src/sqlite.worker" },
   // mode:,
   devtool: "source-map",
   module: {
@@ -16,10 +16,6 @@ module.exports = {
         test: /\.tsx?$/,
         use: ts,
         exclude: /node_modules/,
-      },
-      {
-        test: /\.worker.ts$/,
-        use: [{ loader: "worker-loader" }, ts],
       },
       { test: /\.wasm$/, type: "asset/resource" },
     ],
@@ -33,13 +29,16 @@ module.exports = {
     },
   },
   output: {
-    filename: "bundle.js",
+    filename: "[name].js",
+    publicPath: "",
     path: path.resolve(__dirname, "dist"),
-    assetModuleFilename: "[name]-[hash][ext][query]",
+    assetModuleFilename: "[name][ext]",
     library: {
-      type: "umd"
-    }
+      type: "umd",
+    },
+    globalObject: 'this',
   },
+  // target: ['web', 'webworker', 'node'],
   stats: {
     children: true,
   },
@@ -51,7 +50,7 @@ module.exports = {
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",
-    }
+    },
   },
-  plugins: process.env.analyze ? [new BundleAnalyzerPlugin()]: [],
+  plugins: process.env.analyze ? [new BundleAnalyzerPlugin()] : [],
 };

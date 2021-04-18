@@ -1,17 +1,21 @@
+/// <reference path="./types.d.ts" />
+
 import * as Comlink from "comlink";
-import wasmfile from "../sql.js/dist/sql-wasm-debug.wasm";
-import initSqlJs from "../sql.js/dist/sql-wasm-debug.js";
+import initSqlJs from "../sql.js/dist/sql-wasm.js";
+import wasmUrl from "../sql.js/dist/sql-wasm.wasm";
 import { createLazyFile, RangeMapper } from "./lazyFile";
-import { getSyntheticTrailingComments } from "typescript";
-import { Database } from "sql.js";
-import { SeriesVtab } from "./vtab";
+import { Database, QueryExecResult } from "sql.js";
+import { SeriesVtab, sqlite3_module, SqljsEmscriptenModuleType } from "./vtab";
+
+wasmUrl;
+
 
 // https://gist.github.com/frankier/4bbc85f65ad3311ca5134fbc744db711
 function initTransferHandlers(sql: typeof import("sql.js")) {
   Comlink.transferHandlers.set("WORKERSQLPROXIES", {
     canHandle: (obj): obj is unknown => {
       let isDB = obj instanceof sql.Database;
-      let hasDB = obj.db && obj.db instanceof sql.Database; // prepared statements
+      let hasDB = obj && (obj as any).db && (obj as any).db instanceof sql.Database; // prepared statements
       return isDB || hasDB;
     },
     serialize(obj) {
@@ -23,14 +27,13 @@ function initTransferHandlers(sql: typeof import("sql.js")) {
   });
 }
 
-async function init() {
+async function init(wasmfile: string) {
   const sql = await initSqlJs({
     locateFile: (_file: string) => wasmfile,
   });
   initTransferHandlers(sql);
   return sql;
 }
-const sqljs = init();
 
 export function toObjects<T>(res: QueryExecResult[]): T[] {
   const r = res[0];
@@ -52,10 +55,21 @@ export type SplitFileConfig = {
   databaseLengthBytes: number;
   requestChunkSize: number;
 };
+export interface LazyHttpDatabase extends Database {
+  lazyFile: any
+  filename: string
+  query: <T = any>(query: string, ...params: any[]) => T[]
+  create_vtab: (cons: {new(sqljs: SqljsEmscriptenModuleType, db: Database): sqlite3_module}) => void
+}
 const mod = {
-  db: null as null | Database,
-  async SplitFileHttpDatabase(p: SplitFileConfig): Promise<Database> {
-    const sql = await sqljs;
+  db: null as null | LazyHttpDatabase,
+  sqljs: null as null | Promise<any>,
+  async SplitFileHttpDatabase(wasmUrl: string, p: SplitFileConfig): Promise<Database> {
+    if (this.db) throw Error(`sorry, only one db is supported right now`);
+    if (!this.sqljs) {
+      this.sqljs = init(wasmUrl);
+    }
+    const sql = await this.sqljs;
     console.log("constructing url database");
     const rangeMapper: RangeMapper = (from: number, to: number) => {
       const serverChunkId = (from / p.serverChunkSize) | 0;
@@ -77,9 +91,9 @@ const mod = {
     });
 
     this.db = new sql.CustomDatabase(filename);
-    (this.db as any).lazyFile = lazyFile;
-    this.db.create_vtab(SeriesVtab);
-    this.db.query = (...args) => toObjects(this.db!.exec(...args));
+    this.db!.lazyFile = lazyFile;
+    this.db!.create_vtab(SeriesVtab);
+    this.db!.query = (...args) => toObjects(this.db!.exec(...args));
 
     return this.db!;
   },
@@ -99,5 +113,5 @@ const mod = {
     })`)(this.db);
   }
 };
-export type SqliteMod = typeof mod;
+export type SqliteComlinkMod = typeof mod;
 Comlink.expose(mod);

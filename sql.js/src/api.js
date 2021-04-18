@@ -1272,21 +1272,13 @@ Module["onRuntimeInitialized"] = function onRuntimeInitialized() {
             let type = "i32";
             if(module_things[k] && ele[k]) {
                 const fn = ele[k].bind(ele);
-                var sig = Array(1+ fn.length).fill("i").join("");
-                if (false && k === "xFilter") {
-                    tgt = addFunction((...args) => {
-                        return Asyncify.handleAsync(async () => fn(...args));
-                    }, sig);
-                } else {
-                    tgt = addFunction(fn, sig);
-                }
+                var sig = Array(1 + fn.length).fill("i").join(""); // every arg passed as an int
+                tgt = addFunction(fn, sig);
                 type = "*";
             }
-            console.log("adding at", i, k, tgt, sig);
-            setValue(sqlite3_module + i * 4, tgt, type);// setValue(sqlite3_module + i * 4, addFunction(() => console.log("called "+ k), "i"));
+            setValue(sqlite3_module + i * 4, tgt, type);
             i++;
         }
-        console.log(Module.HEAPU8.slice(sqlite3_module, sqlite3_module + i * 4));
         this.handleError(sqlite3_create_module_v2(this.db, ele.name, sqlite3_module, 0, 0));
     }
 
