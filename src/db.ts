@@ -23,42 +23,26 @@ Comlink.transferHandlers.set("WORKERSQLPROXIES", {
   },
 });
 export type SqliteWorker = Comlink.Remote<SqliteComlinkMod>;
-export interface WorkerHttpvfsDatabase
-  extends Comlink.Remote<LazyHttpDatabase> {
+export interface WorkerHttpvfs {
+  db: Comlink.Remote<LazyHttpDatabase>;
   worker: Comlink.Remote<SqliteComlinkMod>;
-  config: SplitFileConfig;
+  configs: SplitFileConfig[];
 }
 export async function createDbWorker(
-  databaseConfigUrl: string,
+  configs: SplitFileConfig[],
   workerUrl: string,
-  wasmUrl: string,
-): Promise<WorkerHttpvfsDatabase> {
+  wasmUrl: string
+): Promise<WorkerHttpvfs> {
   const worker: Worker = new Worker(workerUrl);
   const sqlite = Comlink.wrap<SqliteComlinkMod>(worker);
 
-  const configUrl = new URL(databaseConfigUrl, location.href);
-  const req = await fetch(configUrl.toString());
-
-  if (!req.ok)
-    throw Error(
-      `Could not load httpvfs config: ${req.status}: ${await req.text()}`
-    );
-  const config: SplitFileConfig = await req.json();
-
-  const db = ((await sqlite.SplitFileHttpDatabase(wasmUrl, {
-    ...config,
-    urlPrefix: new URL(config.urlPrefix, configUrl).toString(),
-  })) as unknown) as WorkerHttpvfsDatabase;
-  db.worker = sqlite;
-  const pageSizeResp = await db.exec("pragma page_size");
-  const pageSize = pageSizeResp[0].values[0][0];
-  if (pageSize !== config.requestChunkSize)
-    console.warn(
-      `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${config.requestChunkSize}`
-    );
+  const db = ((await sqlite.SplitFileHttpDatabase(
+    wasmUrl,
+    configs
+  )) as unknown) as Comlink.Remote<LazyHttpDatabase>;
 
   worker.addEventListener("message", handleAsyncRequestFromWorkerThread);
-  return db;
+  return { db, worker: sqlite, configs };
 }
 
 async function handleAsyncRequestFromWorkerThread(ev: MessageEvent) {

@@ -15,24 +15,32 @@ export type LazyFileConfig = {
   fileLength?: number;
   requestChunkSize: number;
 };
+export type PageReadLog = {
+  pageno: number;
+  // if page was already loaded
+  wasCached: boolean;
+  // how many pages were prefetched
+  prefetch: number;
+};
 
 // Lazy chunked Uint8Array (implements get and length from Uint8Array). Actual getting is abstracted away for eventual reuse.
-class LazyUint8Array {
+export class LazyUint8Array {
   serverChecked = false;
   chunks: Uint8Array[] = []; // Loaded chunks. Index is the chunk number
   totalFetchedBytes = 0;
   totalRequests = 0;
+  readPages: PageReadLog[] = [];
   _length?: number;
 
   lastChunk = 0;
   speed = 1;
   _chunkSize: number;
   rangeMapper: RangeMapper;
-  maxSpeed: number
+  maxSpeed: number;
 
   constructor(config: LazyFileConfig) {
     this._chunkSize = config.requestChunkSize;
-    this.maxSpeed = 1024 * 1024 / this._chunkSize; // max 1MiB at once
+    this.maxSpeed = (5 * 1024 * 1024) / this._chunkSize; // max 5MiB at once
     this.rangeMapper = config.rangeMapper;
     if (config.fileLength) {
       this._length = config.fileLength;
@@ -46,24 +54,33 @@ class LazyUint8Array {
     var chunkNum = (idx / this.chunkSize) | 0;
     return this.getter(chunkNum)[chunkOffset];
   }
-  getter(chunkNum: number) {
-    const start = chunkNum * this.chunkSize;
-
-    if (typeof this.chunks[chunkNum] === "undefined") {
+  lastGet = -1;
+  getter(wantedChunkNum: number) {
+    let wasCached = true;
+    if (typeof this.chunks[wantedChunkNum] === "undefined") {
+      wasCached = false;
       // double the fetching chunk size if the wanted chunk would be within the next fetch request
-      if (chunkNum >= this.lastChunk + 1 && chunkNum <= this.lastChunk + this.speed * 2) {
+      const wouldStartChunkNum = this.lastChunk + 1;
+      let fetchStartChunkNum;
+      if (
+        wantedChunkNum >= wouldStartChunkNum &&
+        wantedChunkNum < wouldStartChunkNum + this.speed * 2
+      ) {
+        fetchStartChunkNum = wouldStartChunkNum;
         this.speed = Math.min(this.maxSpeed, this.speed * 2);
       } else {
+        fetchStartChunkNum = wantedChunkNum;
         this.speed = 1;
       }
       const chunksToFetch = this.speed;
-      let endByte = (chunkNum + chunksToFetch) * this.chunkSize - 1; // including this byte
+      const startByte = fetchStartChunkNum * this.chunkSize;
+      let endByte = (fetchStartChunkNum + chunksToFetch) * this.chunkSize - 1; // including this byte
       endByte = Math.min(endByte, this.length - 1); // if datalength-1 is selected, this is the last block
 
-      this.lastChunk = chunkNum + chunksToFetch - 1;
-      const buf = this.doXHR(start, endByte);
+      this.lastChunk = fetchStartChunkNum + chunksToFetch - 1;
+      const buf = this.doXHR(startByte, endByte);
       for (let i = 0; i < chunksToFetch; i++) {
-        const curChunk = chunkNum + i;
+        const curChunk = fetchStartChunkNum + i;
         if (i * this.chunkSize >= buf.byteLength) break; // past end of file
         const curSize =
           (i + i) * this.chunkSize > buf.byteLength
@@ -77,9 +94,18 @@ class LazyUint8Array {
         );
       }
     }
-    if (typeof this.chunks[chunkNum] === "undefined")
-      throw new Error("doXHR failed!");
-    return this.chunks[chunkNum];
+    if (typeof this.chunks[wantedChunkNum] === "undefined")
+      throw new Error("doXHR failed (bug)!");
+    const boring = this.lastGet == wantedChunkNum;
+    if (!boring) {
+      this.lastGet = wantedChunkNum;
+      this.readPages.push({
+        pageno: wantedChunkNum,
+        wasCached,
+        prefetch: wasCached ? 0 : this.speed - 1,
+      });
+    }
+    return this.chunks[wantedChunkNum];
   }
   checkServer() {
     // Find length
@@ -91,13 +117,17 @@ class LazyUint8Array {
       throw new Error("Couldn't load " + url + ". Status: " + xhr.status);
     var datalength = Number(xhr.getResponseHeader("Content-length"));
 
-    console.log("hEADERS", xhr.getAllResponseHeaders());
     var hasByteServing = xhr.getResponseHeader("Accept-Ranges") === "bytes";
     var usesGzip = xhr.getResponseHeader("Content-Encoding") === "gzip";
 
-    if (!hasByteServing) throw Error("server does not support byte serving");
+    if (!hasByteServing) {
+      const msg = "server does not support byte serving (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server d";
+      console.error(msg, "seen response headers", xhr.getAllResponseHeaders());
+      // throw Error(msg);
+    }
 
     if (usesGzip || !datalength) {
+      console.error("response headers", xhr.getAllResponseHeaders());
       throw Error("server uses gzip or doesn't have length");
     }
 
@@ -195,7 +225,7 @@ export function createLazyFile(
   });
   // use a custom read function
   stream_ops.read = function stream_ops_read(
-    stream: {node: {contents: LazyUint8Array}},
+    stream: { node: { contents: LazyUint8Array } },
     buffer: Uint8Array,
     offset: number,
     length: number,
@@ -205,22 +235,15 @@ export function createLazyFile(
     console.log(
       `[fs: ${length / 1024} KiB read request offset @ ${position / 1024} KiB `
     );
-    var contents = stream.node.contents;
+    const contents = stream.node.contents;
     if (position >= contents.length) return 0;
-    var size = Math.min(contents.length - position, length);
-    /*if (contents.slice) {
-      throw Error('impossible')
-      // normal array
-      for (var i = 0; i < size; i++) {
-        buffer[offset + i] = contents[position + i];
-      }
-    } else {*/
-      // TODO: optimize this to copy whole chunks at once
-      for (var i = 0; i < size; i++) {
-        // LazyUint8Array from sync binary XHR
-        buffer[offset + i] = contents.get(position + i)!;
-      }
-   // }
+    const size = Math.min(contents.length - position, length);
+
+    // TODO: optimize this to copy whole chunks at once
+    for (let i = 0; i < size; i++) {
+      // LazyUint8Array from sync binary XHR
+      buffer[offset + i] = contents.get(position + i)!;
+    }
     return size;
   };
   node.stream_ops = stream_ops;
