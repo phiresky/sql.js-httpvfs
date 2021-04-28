@@ -36,15 +36,13 @@ async function init(wasmfile: string) {
 }
 
 export function toObjects<T>(res: QueryExecResult[]): T[] {
-  const r = res[0];
-  if (!r) return [];
-  return r.values.map((v) => {
+  return res.flatMap(r => r.values.map((v) => {
     const o: any = {};
     for (let i = 0; i < r.columns.length; i++) {
       o[r.columns[i]] = v[i];
     }
     return o as T;
-  });
+  }));
 }
 
 export type SplitFileConfig =
@@ -181,6 +179,8 @@ const mod = {
           config.serverMode === "chunked"
             ? config.databaseLengthBytes
             : undefined,
+        logPageReads: true,
+        maxReadHeads: 3
       });
       lazyFiles.set(filename, lazyFile);
     }

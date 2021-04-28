@@ -10,10 +10,16 @@ export type RangeMapper = (
 ) => { url: string; fromByte: number; toByte: number };
 
 export type LazyFileConfig = {
+  /** function to map a read request to an url with read request  */
   rangeMapper: RangeMapper;
   /** must be known beforehand if there's multiple server chunks (i.e. rangeMapper returns different urls) */
   fileLength?: number;
   requestChunkSize: number;
+  /** number of virtual read heads. default: 3 */
+  maxReadHeads?: number;
+  /** max read speed for sequential access. default: 5 MiB */
+  maxReadSpeed?: number;
+  logPageReads?: boolean;
 };
 export type PageReadLog = {
   pageno: number;
@@ -23,67 +29,116 @@ export type PageReadLog = {
   prefetch: number;
 };
 
-// Lazy chunked Uint8Array (implements get and length from Uint8Array). Actual getting is abstracted away for eventual reuse.
+type ReadHead = { startChunk: number; speed: number };
+// Lazy chunked Uint8Array (implements get and length from Uint8Array)
 export class LazyUint8Array {
-  serverChecked = false;
-  chunks: Uint8Array[] = []; // Loaded chunks. Index is the chunk number
+  private serverChecked = false;
+  private readonly chunks: Uint8Array[] = []; // Loaded chunks. Index is the chunk number
   totalFetchedBytes = 0;
   totalRequests = 0;
   readPages: PageReadLog[] = [];
-  _length?: number;
+  private _length?: number;
 
-  lastChunk = 0;
-  speed = 1;
-  _chunkSize: number;
-  rangeMapper: RangeMapper;
-  maxSpeed: number;
+  // LRU list of read heds, max length = READ_HEADS. first is most recently used
+  private readonly readHeads: ReadHead[] = [];
+  private readonly _chunkSize: number;
+  private readonly rangeMapper: RangeMapper;
+  private readonly maxSpeed: number;
+  private readonly maxReadHeads: number;
+  private readonly logPageReads: boolean;
 
   constructor(config: LazyFileConfig) {
     this._chunkSize = config.requestChunkSize;
-    this.maxSpeed = (5 * 1024 * 1024) / this._chunkSize; // max 5MiB at once
+    this.maxSpeed = Math.round(
+      (config.maxReadSpeed || 5 * 1024 * 1024) / this._chunkSize
+    ); // max 5MiB at once
+    this.maxReadHeads = config.maxReadHeads ?? 3;
     this.rangeMapper = config.rangeMapper;
+    this.logPageReads = config.logPageReads ?? false;
     if (config.fileLength) {
       this._length = config.fileLength;
     }
   }
+  copyInto(
+    buffer: Uint8Array,
+    outOffset: number,
+    _length: number,
+    start: number
+  ): number {
+    if (start >= this.length) return 0;
+    const length = Math.min(this.length - start, _length);
+    const end = start + length;
+    let i = 0;
+    while (i < length) {
+      // {idx: 24, chunkOffset: 24, chunkNum: 0, wantedSize: 16}
+      const idx = start + i;
+      const chunkOffset = idx % this.chunkSize;
+      const chunkNum = (idx / this.chunkSize) | 0;
+      const wantedSize = Math.min(this.chunkSize, end - idx);
+      let inChunk = this.getChunk(chunkNum);
+      if (chunkOffset !== 0 || wantedSize !== this.chunkSize) {
+        inChunk = inChunk.subarray(chunkOffset, chunkOffset + wantedSize);
+      }
+      buffer.set(inChunk, outOffset + i);
+      i += inChunk.length;
+    }
+    return length;
+  }
+
   get(idx: number) {
     if (idx > this.length - 1 || idx < 0) {
       return undefined;
     }
     var chunkOffset = idx % this.chunkSize;
     var chunkNum = (idx / this.chunkSize) | 0;
-    return this.getter(chunkNum)[chunkOffset];
+    return this.getChunk(chunkNum)[chunkOffset];
   }
   lastGet = -1;
-  getter(wantedChunkNum: number) {
+  /* find the best matching existing read head to get given chunk or create a new one */
+  private moveReadHead(wantedChunkNum: number): ReadHead {
+    for (const [i, head] of this.readHeads.entries()) {
+      const fetchStartChunkNum = head.startChunk + head.speed;
+      const newSpeed = head.speed * 2;
+      const wantedIsInNextFetchOfHead =
+        wantedChunkNum >= fetchStartChunkNum &&
+        wantedChunkNum < fetchStartChunkNum + newSpeed;
+      if (wantedIsInNextFetchOfHead) {
+        head.speed = Math.min(this.maxSpeed, newSpeed);
+        head.startChunk = fetchStartChunkNum;
+        if (i !== 0) {
+          // move head to front
+          this.readHeads.splice(i, 1);
+          this.readHeads.unshift(head);
+        }
+        return head;
+      }
+    }
+    const newHead: ReadHead = {
+      startChunk: wantedChunkNum,
+      speed: 1,
+    };
+    this.readHeads.unshift(newHead);
+    while (this.readHeads.length > this.maxReadHeads) this.readHeads.pop();
+    return newHead;
+  }
+  private getChunk(wantedChunkNum: number) {
     let wasCached = true;
     if (typeof this.chunks[wantedChunkNum] === "undefined") {
       wasCached = false;
       // double the fetching chunk size if the wanted chunk would be within the next fetch request
-      const wouldStartChunkNum = this.lastChunk + 1;
-      let fetchStartChunkNum;
-      if (
-        wantedChunkNum >= wouldStartChunkNum &&
-        wantedChunkNum < wouldStartChunkNum + this.speed * 2
-      ) {
-        fetchStartChunkNum = wouldStartChunkNum;
-        this.speed = Math.min(this.maxSpeed, this.speed * 2);
-      } else {
-        fetchStartChunkNum = wantedChunkNum;
-        this.speed = 1;
-      }
-      const chunksToFetch = this.speed;
-      const startByte = fetchStartChunkNum * this.chunkSize;
-      let endByte = (fetchStartChunkNum + chunksToFetch) * this.chunkSize - 1; // including this byte
+      const head = this.moveReadHead(wantedChunkNum);
+
+      const chunksToFetch = head.speed;
+      const startByte = head.startChunk * this.chunkSize;
+      let endByte = (head.startChunk + chunksToFetch) * this.chunkSize - 1; // including this byte
       endByte = Math.min(endByte, this.length - 1); // if datalength-1 is selected, this is the last block
 
-      this.lastChunk = fetchStartChunkNum + chunksToFetch - 1;
       const buf = this.doXHR(startByte, endByte);
       for (let i = 0; i < chunksToFetch; i++) {
-        const curChunk = fetchStartChunkNum + i;
+        const curChunk = head.startChunk + i;
         if (i * this.chunkSize >= buf.byteLength) break; // past end of file
         const curSize =
-          (i + i) * this.chunkSize > buf.byteLength
+          (i + 1) * this.chunkSize > buf.byteLength
             ? buf.byteLength - i * this.chunkSize
             : this.chunkSize;
         // console.log("constructing chunk", buf.byteLength, i * this.chunkSize, curSize);
@@ -96,13 +151,13 @@ export class LazyUint8Array {
     }
     if (typeof this.chunks[wantedChunkNum] === "undefined")
       throw new Error("doXHR failed (bug)!");
-    const boring = this.lastGet == wantedChunkNum;
+    const boring = !this.logPageReads || this.lastGet == wantedChunkNum;
     if (!boring) {
       this.lastGet = wantedChunkNum;
       this.readPages.push({
         pageno: wantedChunkNum,
         wasCached,
-        prefetch: wasCached ? 0 : this.speed - 1,
+        prefetch: wasCached ? 0 : this.readHeads[0].speed - 1,
       });
     }
     return this.chunks[wantedChunkNum];
@@ -121,7 +176,8 @@ export class LazyUint8Array {
     var usesGzip = xhr.getResponseHeader("Content-Encoding") === "gzip";
 
     if (!hasByteServing) {
-      const msg = "server does not support byte serving (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server d";
+      const msg =
+        "server does not support byte serving (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server doesn't mark the accept-ranges header as exposed";
       console.error(msg, "seen response headers", xhr.getAllResponseHeaders());
       // throw Error(msg);
     }
@@ -149,7 +205,7 @@ export class LazyUint8Array {
   }
   private doXHR(absoluteFrom: number, absoluteTo: number) {
     console.log(
-      `- [xhr of size ${(absoluteTo + 1 - absoluteFrom) / 1024} KiB]`
+      `[xhr of size ${(absoluteTo + 1 - absoluteFrom) / 1024} KiB @ ${absoluteFrom / 1024} KiB]`
     );
     this.totalFetchedBytes += absoluteTo - absoluteFrom;
     this.totalRequests++;
@@ -232,19 +288,10 @@ export function createLazyFile(
     position: number
   ) {
     FS.forceLoadFile(node);
-    console.log(
-      `[fs: ${length / 1024} KiB read request offset @ ${position / 1024} KiB `
-    );
-    const contents = stream.node.contents;
-    if (position >= contents.length) return 0;
-    const size = Math.min(contents.length - position, length);
 
-    // TODO: optimize this to copy whole chunks at once
-    for (let i = 0; i < size; i++) {
-      // LazyUint8Array from sync binary XHR
-      buffer[offset + i] = contents.get(position + i)!;
-    }
-    return size;
+    const contents = stream.node.contents;
+
+    return contents.copyInto(buffer, offset, length, position);
   };
   node.stream_ops = stream_ops;
   return node;
