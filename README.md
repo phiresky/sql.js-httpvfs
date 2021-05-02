@@ -74,15 +74,14 @@ const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
 ## Is this production ready?
 
-Nope
-
+It works fine, but I'm not making any effort to support older or weird browsers. If the browser doesn't support WebAssembly and WebWorkers, this won't work. There's also no cache eviction, so the more data is fetched the more RAM it will use. Most of the complicated work is done by SQLite, which is well tested, but the virtual file system part doesn't have any tests.
 
 ## Inspiration
 
 This project is inspired by:
 
-* https://github.com/lmatteis/torrent-net https://github.com/bittorrent/sqltorrent Torrent VFS for SQLite. In theory even more awesome than a httpvfs, but only works with native SQLite not in the browser (needs extension to use WebTorrent).
-* https://phiresky.github.io/tv-show-ratings/ a project of mine that fetches the backing data from a WebTorrent (and afterwards seeds it). Not SQLite though, just a torrent with a set of hashed file chunks.
+* https://github.com/lmatteis/torrent-net and https://github.com/bittorrent/sqltorrent Torrent VFS for SQLite. In theory even more awesome than a httpvfs, but only works with native SQLite not in the browser (someone needs to make a baby of this and sqltorrent to get something that uses WebTorrent).
+* https://phiresky.github.io/tv-show-ratings/ a project of mine that fetches the backing data from a WebTorrent (and afterwards seeds it). Not SQLite though, just a torrent with a set of hashed file chunks containing protobufs.
 * https://phiresky.github.io/youtube-sponsorship-stats/?uploader=Adam+Ragusea what I originally built sql.js-httpvfs for
 
 The original code of lazyFile is based on the emscripten createLazyFile function, though not much of that code is remaining.
