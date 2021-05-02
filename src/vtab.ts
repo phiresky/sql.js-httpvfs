@@ -207,7 +207,7 @@ export class SeriesVtab implements sqlite3_module {
   iVersion: number = 2;
   cursors = new Map<number, Cursor>();
   constructor(private module: SqljsEmscriptenModuleType, private db: Database) {
-    console.log("cnostructed vfs");
+    console.log("constructed vfs");
   }
   getCursor(cursor: Ptr<sqlite3_vtab_cursor>): Cursor {
     const cursorObj = this.cursors.get(cursor);
