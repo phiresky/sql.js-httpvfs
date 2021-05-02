@@ -1,8 +1,7 @@
 // adapted from https://github.com/emscripten-core/emscripten/blob/cbc974264e0b0b3f0ce8020fb2f1861376c66545/src/library_fs.js
 // flexible chunk size parameter
 // Creates a file record for lazy-loading from a URL. XXX This requires a synchronous
-// XHR, which is not possible in browsers except in a web worker! Use preloading,
-// either --preload-file in emcc or FS.createPreloadedFile
+// XHR, which is not possible in browsers except in a web worker!
 
 export type RangeMapper = (
   fromByte: number,
@@ -14,6 +13,7 @@ export type LazyFileConfig = {
   rangeMapper: RangeMapper;
   /** must be known beforehand if there's multiple server chunks (i.e. rangeMapper returns different urls) */
   fileLength?: number;
+  /** chunk size for random access requests (should be same as sqlite page size) */
   requestChunkSize: number;
   /** number of virtual read heads. default: 3 */
   maxReadHeads?: number;
@@ -94,7 +94,7 @@ export class LazyUint8Array {
     return this.getChunk(chunkNum)[chunkOffset];
   }
   lastGet = -1;
-  /* find the best matching existing read head to get given chunk or create a new one */
+  /* find the best matching existing read head to get the given chunk or create a new one */
   private moveReadHead(wantedChunkNum: number): ReadHead {
     for (const [i, head] of this.readHeads.entries()) {
       const fetchStartChunkNum = head.startChunk + head.speed;
@@ -121,7 +121,8 @@ export class LazyUint8Array {
     while (this.readHeads.length > this.maxReadHeads) this.readHeads.pop();
     return newHead;
   }
-  private getChunk(wantedChunkNum: number) {
+  /** get the given chunk from cache or fetch it from remote */
+  private getChunk(wantedChunkNum: number): Uint8Array {
     let wasCached = true;
     if (typeof this.chunks[wantedChunkNum] === "undefined") {
       wasCached = false;
@@ -162,8 +163,8 @@ export class LazyUint8Array {
     }
     return this.chunks[wantedChunkNum];
   }
+  /** verify the server supports range requests and find out file length */
   checkServer() {
-    // Find length
     var xhr = new XMLHttpRequest();
     const url = this.rangeMapper(0, 0).url;
     xhr.open("HEAD", url, false);
@@ -248,6 +249,7 @@ export class LazyUint8Array {
     }
   }
 }
+/** create the actual file object for the emscripten file system */
 export function createLazyFile(
   FS: any,
   parent: string,

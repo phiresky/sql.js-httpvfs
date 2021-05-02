@@ -4,6 +4,8 @@ sql.js is a light wrapper around SQLite compiled with EMScripten for use in the 
 
 This repo is a fork of and wrapper around sql.js to provide a read-only HTTP-Range-request based virtual file system for SQLite. It allows hosting an SQLite database on a static file hoster and querying that database from the browser without fully downloading it.
 
+The virtual file system is an emscripten filesystem with some "smart" logic to accelerate fetching with virtual read heads that speed up when sequential data is fetched. It could also be useful to other application, the code is in [lazyFile.ts](./src/lazyFile.ts).
+
 Note that this only works well if your database and indices is structured well.
 
 It also provides a proof-of-concept level implementation of a DOM virtual table that allows interacting (read/write) with the browser DOM directly from within SQLite queries.
@@ -21,14 +23,15 @@ pragma page_size = 1024; -- trade off of number of requests that need to be made
 vacuum; -- reorganize database and apply changed page size
 ```
 
-(optional) Second, split the database into chunks and generate a json config using the [create_db.sh](create_db.sh) script. This is needed if your hoster has a maximum file size. It can also be a good idea generally depending on your CDN since it allows selective caching of the chunks your users actually use and reduces cache eviction.
+(optional) Second, split the database into chunks and generate a json config using the [create_db.sh](./create_db.sh) script. This is needed if your hoster has a maximum file size. It can also be a good idea generally depending on your CDN since it allows selective CDN caching of the chunks your users actually use and reduces cache eviction.
 
-Finally, use it in TypeScript / JS!
+Finally, install sql.js-httpvfs from [npm](https://www.npmjs.com/package/sql.js-httpvfs) and use it in TypeScript / JS!
 
 ```ts
 import { createDbWorker } from "sql.js-httpvfs"
 
-// sadly there's no good way to package workers and wasm directly so you need a way to get these two URLs from your bundler. The below is the webpack5 way:
+// sadly there's no good way to package workers and wasm directly so you need a way to get these two URLs from your bundler.
+// This is the webpack5 way to create a asset bundle of the worker and wasm:
 const workerUrl = new URL(
   "sql.js-httpvfs/dist/sqlite.worker.js",
   import.meta.url,
@@ -67,6 +70,9 @@ const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
 ```
 
+## Is this production ready?
+
+Nope
 
 
 ## Inspiration

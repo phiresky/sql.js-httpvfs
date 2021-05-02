@@ -1,5 +1,8 @@
 {
   "name": "sql.js-httpvfs",
+  "version": "0.8.5",
+  "repository": "https://github.com/phiresky/sql.js-httpvfs",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "webpack serve --mode=development",
     "build": "webpack build --mode=production"
@@ -30,5 +33,6 @@
     "webpack-bundle-analyzer": "^4.4.1",
     "webpack-dev-server": "^3.11.2"
   },
-  "main": "dist/index.js"
+  "main": "dist/index.js",
+  "files": ["dist/*"]
 }
