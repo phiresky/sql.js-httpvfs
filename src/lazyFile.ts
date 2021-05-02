@@ -19,6 +19,7 @@ export type LazyFileConfig = {
   maxReadHeads?: number;
   /** max read speed for sequential access. default: 5 MiB */
   maxReadSpeed?: number;
+  /** if true, log all read pages into the `readPages` field for debugging */
   logPageReads?: boolean;
 };
 export type PageReadLog = {
@@ -30,7 +31,6 @@ export type PageReadLog = {
 };
 
 type ReadHead = { startChunk: number; speed: number };
-// Lazy chunked Uint8Array (implements get and length from Uint8Array)
 export class LazyUint8Array {
   private serverChecked = false;
   private readonly chunks: Uint8Array[] = []; // Loaded chunks. Index is the chunk number
@@ -39,7 +39,7 @@ export class LazyUint8Array {
   readPages: PageReadLog[] = [];
   private _length?: number;
 
-  // LRU list of read heds, max length = READ_HEADS. first is most recently used
+  // LRU list of read heds, max length = maxReadHeads. first is most recently used
   private readonly readHeads: ReadHead[] = [];
   private readonly _chunkSize: number;
   private readonly rangeMapper: RangeMapper;
@@ -59,14 +59,19 @@ export class LazyUint8Array {
       this._length = config.fileLength;
     }
   }
+  /**
+   * efficiently copy the range [start, start + length) from the http file into the
+   * output buffer at position [outOffset, outOffest + length)
+   * reads from cache or synchronously fetches via HTTP if needed
+   */
   copyInto(
     buffer: Uint8Array,
     outOffset: number,
-    _length: number,
+    length: number,
     start: number
   ): number {
     if (start >= this.length) return 0;
-    const length = Math.min(this.length - start, _length);
+    length = Math.min(this.length - start, length);
     const end = start + length;
     let i = 0;
     while (i < length) {
@@ -85,15 +90,7 @@ export class LazyUint8Array {
     return length;
   }
 
-  get(idx: number) {
-    if (idx > this.length - 1 || idx < 0) {
-      return undefined;
-    }
-    var chunkOffset = idx % this.chunkSize;
-    var chunkNum = (idx / this.chunkSize) | 0;
-    return this.getChunk(chunkNum)[chunkOffset];
-  }
-  lastGet = -1;
+  private lastGet = -1;
   /* find the best matching existing read head to get the given chunk or create a new one */
   private moveReadHead(wantedChunkNum: number): ReadHead {
     for (const [i, head] of this.readHeads.entries()) {
@@ -164,7 +161,7 @@ export class LazyUint8Array {
     return this.chunks[wantedChunkNum];
   }
   /** verify the server supports range requests and find out file length */
-  checkServer() {
+  private checkServer() {
     var xhr = new XMLHttpRequest();
     const url = this.rangeMapper(0, 0).url;
     xhr.open("HEAD", url, false);
@@ -206,7 +203,9 @@ export class LazyUint8Array {
   }
   private doXHR(absoluteFrom: number, absoluteTo: number) {
     console.log(
-      `[xhr of size ${(absoluteTo + 1 - absoluteFrom) / 1024} KiB @ ${absoluteFrom / 1024} KiB]`
+      `[xhr of size ${(absoluteTo + 1 - absoluteFrom) / 1024} KiB @ ${
+        absoluteFrom / 1024
+      } KiB]`
     );
     this.totalFetchedBytes += absoluteTo - absoluteFrom;
     this.totalRequests++;
