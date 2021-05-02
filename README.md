@@ -84,3 +84,5 @@ This project is inspired by:
 * https://github.com/lmatteis/torrent-net https://github.com/bittorrent/sqltorrent Torrent VFS for SQLite. In theory even more awesome than a httpvfs, but only works with native SQLite not in the browser (needs extension to use WebTorrent).
 * https://phiresky.github.io/tv-show-ratings/ a project of mine that fetches the backing data from a WebTorrent (and afterwards seeds it). Not SQLite though, just a torrent with a set of hashed file chunks.
 * https://phiresky.github.io/youtube-sponsorship-stats/?uploader=Adam+Ragusea what I originally built sql.js-httpvfs for
+
+The original code of lazyFile is based on the emscripten createLazyFile function, though not much of that code is remaining.
