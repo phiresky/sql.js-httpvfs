@@ -6,11 +6,11 @@ sql.js is a light wrapper around SQLite compiled with EMScripten for use in the 
 
 This repo is a fork of and wrapper around sql.js to provide a read-only HTTP-Range-request based virtual file system for SQLite. It allows hosting an SQLite database on a static file hoster and querying that database from the browser without fully downloading it.
 
-The virtual file system is an emscripten filesystem with some "smart" logic to accelerate fetching with virtual read heads that speed up when sequential data is fetched. It could also be useful to other application, the code is in [lazyFile.ts](./src/lazyFile.ts).
+The virtual file system is an emscripten filesystem with some "smart" logic to accelerate fetching with virtual read heads that speed up when sequential data is fetched. It could also be useful to other applications, the code is in [lazyFile.ts](./src/lazyFile.ts). It might also be useful to implement this lazy fetching as an [SQLite VFS](https://www.sqlite.org/vfs.html) since then SQLite could be compiled with e.g. WASI SDK without relying on all the emscripten OS emulation.
 
-Note that this only works well if your database and indices is structured well.
+Note that this whole thing only works well if your database and indexes are structured well.
 
-It also provides a proof-of-concept level implementation of a DOM virtual table that allows interacting (read/write) with the browser DOM directly from within SQLite queries.
+sql.js-httpvfs also provides a proof-of-concept level implementation of a DOM virtual table that allows interacting (read/write) with the browser DOM directly from within SQLite queries.
 
 
 ## Usage
@@ -69,6 +69,7 @@ const worker = await createDbWorker(
 // worker.db is a now SQL.js instance except that all functions return Promises.
 
 const result = await worker.db.exec(`select * from table where id = ?`, [123]);
+
 
 ```
 
