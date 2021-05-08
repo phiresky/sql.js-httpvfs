@@ -14,8 +14,8 @@ async function load() {
         config: {
           serverMode: "full",
           url: "/example.sqlite3",
-          requestChunkSize: 4096
-        }
+          requestChunkSize: 4096,
+        },
       },
     ],
     workerUrl.toString(),

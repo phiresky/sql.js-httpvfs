@@ -29,7 +29,7 @@ vacuum; -- reorganize database and apply changed page size
 
 Finally, install sql.js-httpvfs from [npm](https://www.npmjs.com/package/sql.js-httpvfs) and use it in TypeScript / JS!
 
-Here's an example for people familiar with the JS / TS world. At the bottom of this readme there's a more complete example for those unfamiliar.
+Here's an example for people familiar with the JS / TS world. **At the bottom of this readme** there's a more complete example for those unfamiliar.
 
 ```ts
 import { createDbWorker } from "sql.js-httpvfs"
@@ -88,11 +88,11 @@ This project is inspired by:
 
 The original code of lazyFile is based on the emscripten createLazyFile function, though not much of that code is remaining.
 
-## Minimal Example from scratch
+## Minimal example from scratch
 
-Here's an example of how to setup sql.js-httpvfs completely from scratch, for people unfamiliar with JavaScript or NPM in general.
+Here's an example of how to setup a project with sql.js-httpvfs completely from scratch, for people unfamiliar with JavaScript or NPM in general.
 
-First, You will need `node` and `npm`. Get this from your system package manager like `apt`.
+First, You will need `node` and `npm`. Get this from your system package manager like `apt install nodejs npm`.
 
 Then, go to a new directory and add a few dependencies:
 
@@ -104,7 +104,7 @@ npm install --save sql.js-httpvfs
 npx tsc --init
 ```
 
-Edit the tsconfig.json file to make it more modern:
+Edit the generated tsconfig.json file to make it more modern:
 ```json
 ...
 "target": "es2020",
@@ -113,7 +113,7 @@ Edit the tsconfig.json file to make it more modern:
 ...
 ```
 
-Create a webpack config, minimal index.html file and TypeScript
+Create a webpack config, minimal index.html file and TypeScript entry point:
 
 * [example/webpack.config.js](./example/webpack.config.js)
 * [example/index.html](./example/index.html)
@@ -141,4 +141,4 @@ And you should see the output to the query `select * from mytable`.
 [{"foo":"hello","bar":"world"}]
 ```
 
-The full code of this example is in [example/](./example/)
+The full code of this example is in [example/](./example/).
