@@ -74,6 +74,22 @@ const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
 ```
 
+## Debugging data fetching
+
+If your query is fetching a lot of data and you're not sure why, try this:
+
+1. Look at the output of `explain query plan select ......`
+
+    - `SCAN TABLE t1` means the table t1 will have to be downloaded pretty much fully
+    - `SCAN TABLE t1 USING INDEX i1 (a=?)` means direct index lookups to find a row, then table lookups by rowid
+    - `SCAN TABLE t1 USING COVERING INDEX i1 (a)` direct index lookup _without_ a table lookup. This is the fastest.
+
+    You want all the columns in your WHERE clause that significantly reduce the number of results to be part of an index, with the ones reducing the result count the most coming first.
+
+    Another useful technique is to create an index containing exactly the rows filtered by and the rows selected, which SQLite reads as a COVERING INDEX in a sequential manner (no random access at all!). For example `create index i1 on tbl (filteredby1, filteredby2, selected1, selected2, selected3)`. This index is perfect for a query filtering by the `filteredby1` and `filteredby2` columns that only select the three columns at the back of the index.
+
+2. You can look at the `dbstat` virtual table to find out exactly what the pages SQLite is reading contain. For example, if you have `[xhr of size 1 KiB @ 1484048 KiB]` in your logs that means it's reading page 1484048. You can get the full log of read pages by using `worker.getResetAccessedPages()`. Check the content of pages with `select * from dbstat where pageno = 1484048`. Do this in an SQLite3 shell not the browser because the `dbstat` vtable reads the whole database.
+
 ## Is this production ready?
 
 It works fine, but I'm not making any effort to support older or weird browsers. If the browser doesn't support WebAssembly and WebWorkers, this won't work. There's also no cache eviction, so the more data is fetched the more RAM it will use. Most of the complicated work is done by SQLite, which is well tested, but the virtual file system part doesn't have any tests.
