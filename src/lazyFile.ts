@@ -95,12 +95,12 @@ export class LazyUint8Array {
   private moveReadHead(wantedChunkNum: number): ReadHead {
     for (const [i, head] of this.readHeads.entries()) {
       const fetchStartChunkNum = head.startChunk + head.speed;
-      const newSpeed = head.speed * 2;
+      const newSpeed = Math.min(this.maxSpeed, head.speed * 2);
       const wantedIsInNextFetchOfHead =
         wantedChunkNum >= fetchStartChunkNum &&
         wantedChunkNum < fetchStartChunkNum + newSpeed;
       if (wantedIsInNextFetchOfHead) {
-        head.speed = Math.min(this.maxSpeed, newSpeed);
+        head.speed = newSpeed;
         head.startChunk = fetchStartChunkNum;
         if (i !== 0) {
           // move head to front
