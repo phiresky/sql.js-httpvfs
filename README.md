@@ -29,6 +29,8 @@ vacuum; -- reorganize database and apply changed page size
 
 Finally, install sql.js-httpvfs from [npm](https://www.npmjs.com/package/sql.js-httpvfs) and use it in TypeScript / JS!
 
+Here's an example for people familiar with the JS / TS world. At the bottom of this readme there's a more complete example for those unfamiliar.
+
 ```ts
 import { createDbWorker } from "sql.js-httpvfs"
 
@@ -70,7 +72,6 @@ const worker = await createDbWorker(
 
 const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
-
 ```
 
 ## Is this production ready?
@@ -86,3 +87,58 @@ This project is inspired by:
 * https://phiresky.github.io/youtube-sponsorship-stats/?uploader=Adam+Ragusea what I originally built sql.js-httpvfs for
 
 The original code of lazyFile is based on the emscripten createLazyFile function, though not much of that code is remaining.
+
+## Minimal Example from scratch
+
+Here's an example of how to setup sql.js-httpvfs completely from scratch, for people unfamiliar with JavaScript or NPM in general.
+
+First, You will need `node` and `npm`. Get this from your system package manager like `apt`.
+
+Then, go to a new directory and add a few dependencies:
+
+```sh
+mkdir example
+cd example
+npm install --save-dev webpack webpack-cli typescript ts-loader http-server
+npm install --save sql.js-httpvfs
+npx tsc --init
+```
+
+Edit the tsconfig.json file to make it more modern:
+```json
+...
+"target": "es2020",
+"module": "es2020",
+"moduleResolution": "node",
+...
+```
+
+Create a webpack config, minimal index.html file and TypeScript
+
+* [example/webpack.config.js](./example/webpack.config.js)
+* [example/index.html](./example/index.html)
+* [example/src/index.ts](./example/src/index.ts)
+
+Finally, create a database:
+
+```sh
+sqlite3 example.sqlite3 "create table mytable(foo, bar)"
+sqlite3 example.sqlite3 "insert into mytable values ('hello', 'world')"
+```
+
+and build the JS bundle and start a webserver:
+
+```
+./node_modules/.bin/webpack --mode=development
+./node_modules/.bin/http-server
+```
+
+Then go to http://localhost:8080
+
+And you should see the output to the query `select * from mytable`.
+
+```json
+[{"foo":"hello","bar":"world"}]
+```
+
+The full code of this example is in [example/](./example/)
