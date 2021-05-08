@@ -1,6 +1,6 @@
 {
   "name": "sql.js-httpvfs",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "repository": "https://github.com/phiresky/sql.js-httpvfs",
   "license": "Apache-2.0",
   "scripts": {
