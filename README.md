@@ -115,6 +115,7 @@ Then, go to a new directory and add a few dependencies:
 ```sh
 mkdir example
 cd example
+echo '{}' > package.json
 npm install --save-dev webpack webpack-cli typescript ts-loader http-server
 npm install --save sql.js-httpvfs
 npx tsc --init
