@@ -145,8 +145,8 @@ sqlite3 example.sqlite3 "insert into mytable values ('hello', 'world')"
 and build the JS bundle and start a webserver:
 
 ```
-./node_modules/.bin/webpack --mode=development
-./node_modules/.bin/http-server
+~/node_modules/.bin/webpack --mode=development
+~/node_modules/.bin/http-server
 ```
 
 Then go to http://localhost:8080
