@@ -175,8 +175,8 @@ export class LazyUint8Array {
 
     if (!hasByteServing) {
       const msg =
-        "server does not support byte serving (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server doesn't mark the accept-ranges header as exposed";
-      console.error(msg, "seen response headers", xhr.getAllResponseHeaders());
+        "server either does not support byte serving or does not advertise it (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server doesn't mark the accept-ranges header as exposed.";
+      console.warn(msg, "seen response headers:", xhr.getAllResponseHeaders());
       // throw Error(msg);
     }
 
