@@ -95,7 +95,15 @@ If your query is fetching a lot of data and you're not sure why, try this:
 
 ## Is this production ready?
 
-It works fine, but I'm not making any effort to support older or weird browsers. If the browser doesn't support WebAssembly and WebWorkers, this won't work. There's also no cache eviction, so the more data is fetched the more RAM it will use. Most of the complicated work is done by SQLite, which is well tested, but the virtual file system part doesn't have any tests.
+Note that this library was mainly written for small personal projects of mine and as a demonstration. I've received requests from many people for applications that are out of the scope of this library for me (Which is awesome, and I'm happy to have inspired so many interesting new idea).
+
+In general it works fine, but I'm not making any effort to support older or weird browsers. If the browser doesn't support WebAssembly and WebWorkers, this won't work. There's also no cache eviction, so the more data is fetched the more RAM it will use. Most of the complicated work is done by SQLite, which is well tested, but the virtual file system part doesn't have any tests.
+
+If you want to build something new that doesn't fit with this library exactly, I'd recommend you look into these discussions and libraries:
+
+* The general virtual file system discussion here: https://github.com/sql-js/sql.js/issues/447
+* [wa-sqlite](https://github.com/rhashimoto/wa-sqlite), which is a much simpler wasm wrapper for SQLite than sql.js a and has different VFSes that don't require an EMScripten dependency. sql.js-httpvfs could easily be reimplemented on top of this.
+* [absurd-sql](https://github.com/jlongster/absurd-sql), which is an implementation of a pretty efficient VFS that allows persistence / read/write queries by storing the DB in IndexedDB
 
 ## Inspiration
 
