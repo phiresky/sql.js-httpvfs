@@ -1,7 +1,10 @@
 /// <reference lib="webworker" />
 import { Database } from "sql.js";
 /*
- * don't look at this code
+ * This file implements the virtual table that makes interacting with the DOM as a virtual SQLite table possible.
+ * It is not required at all for the httpvfs functionality.
+ *
+ * don't look at it
  *
  *
  *
