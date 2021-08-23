@@ -164,28 +164,49 @@ export class LazyUint8Array {
   private checkServer() {
     var xhr = new XMLHttpRequest();
     const url = this.rangeMapper(0, 0).url;
+    // can't set Accept-Encoding header :( https://stackoverflow.com/questions/41701849/cannot-modify-accept-encoding-with-fetch
     xhr.open("HEAD", url, false);
+    // maybe this will help it not use compression?
+    xhr.setRequestHeader("Range", "bytes=" + 0 + "-" + this._chunkSize);
     xhr.send(null);
     if (!((xhr.status >= 200 && xhr.status < 300) || xhr.status === 304))
       throw new Error("Couldn't load " + url + ". Status: " + xhr.status);
-    var datalength = Number(xhr.getResponseHeader("Content-length"));
+    var datalength: number | null = Number(
+      xhr.getResponseHeader("Content-length")
+    );
 
     var hasByteServing = xhr.getResponseHeader("Accept-Ranges") === "bytes";
-    var usesGzip = xhr.getResponseHeader("Content-Encoding") === "gzip";
+    const encoding = xhr.getResponseHeader("Content-Encoding");
+    var usesCompression = encoding && encoding !== "identity";
 
     if (!hasByteServing) {
       const msg =
-        "server either does not support byte serving or does not advertise it (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server doesn't mark the accept-ranges header as exposed.";
-      console.warn(msg, "seen response headers:", xhr.getAllResponseHeaders());
+        "Warning: The server did not respond with Accept-Ranges=bytes. It either does not support byte serving or does not advertise it (`Accept-Ranges: bytes` header missing), or your database is hosted on CORS and the server doesn't mark the accept-ranges header as exposed. This may lead to incorrect results.";
+      console.warn(
+        msg,
+        "(seen response headers:",
+        xhr.getAllResponseHeaders(),
+        ")"
+      );
       // throw Error(msg);
     }
-
-    if (usesGzip || !datalength) {
-      console.error("response headers", xhr.getAllResponseHeaders());
-      throw Error("server uses gzip or doesn't have length");
+    if (usesCompression) {
+      console.warn(
+        `Warning: The server responded with ${encoding} encoding to a HEAD request. Ignoring since it may not do so for Range HTTP requests, but this will lead to incorrect results otherwise since the ranges will be based on the compressed data instead of the uncompressed data.`
+      );
+    }
+    if (usesCompression) {
+      // can't use the given data length if there's compression
+      datalength = null;
     }
 
-    if (!this._length) this._length = datalength;
+    if (!this._length) {
+      if (!datalength) {
+        console.error("response headers", xhr.getAllResponseHeaders());
+        throw Error("Length of the file not known. It must either be supplied in the config or given by the HTTP server.");
+      }
+      this._length = datalength;
+    }
     this.serverChecked = true;
   }
   get length() {
@@ -221,10 +242,11 @@ export class LazyUint8Array {
       throw new Error(
         "only " + this.length + " bytes available! programmer error!"
       );
-    const { fromByte: from, toByte: to, url } = this.rangeMapper(
-      absoluteFrom,
-      absoluteTo
-    );
+    const {
+      fromByte: from,
+      toByte: to,
+      url,
+    } = this.rangeMapper(absoluteFrom, absoluteTo);
 
     // TODO: Use mozResponseArrayBuffer, responseStream, etc. if available.
     var xhr = new XMLHttpRequest();
