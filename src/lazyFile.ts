@@ -166,8 +166,8 @@ export class LazyUint8Array {
     const url = this.rangeMapper(0, 0).url;
     // can't set Accept-Encoding header :( https://stackoverflow.com/questions/41701849/cannot-modify-accept-encoding-with-fetch
     xhr.open("HEAD", url, false);
-    // maybe this will help it not use compression?
-    xhr.setRequestHeader("Range", "bytes=" + 0 + "-" + this._chunkSize);
+    // // maybe this will help it not use compression?
+    // xhr.setRequestHeader("Range", "bytes=" + 0 + "-" + 1e12);
     xhr.send(null);
     if (!((xhr.status >= 200 && xhr.status < 300) || xhr.status === 304))
       throw new Error("Couldn't load " + url + ". Status: " + xhr.status);
