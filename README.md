@@ -64,9 +64,13 @@ const config = {
   configUrl: "/foo/bar/config.json"
 }
 
+
+let maxBytesToRead = 10 * 1024 * 1024;
 const worker = await createDbWorker(
   [config],
-  workerUrl.toString(), wasmUrl.toString()
+  workerUrl.toString(),
+  wasmUrl.toString(),
+  maxBytesToRead // optional, defaults to Infinity
 );
 // you can also pass multiple config objects which can then be used as separate database schemas with `ATTACH virtualFilename as schemaname`, where virtualFilename is also set in the config object.
 
@@ -75,6 +79,12 @@ const worker = await createDbWorker(
 
 const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
+// worker.worker.bytesRead is a Promise for the number of bytes read by the worker.
+// when if a request would cause it to exceed maxBytesToRead, that request will throw a SQLite disk I/O error.
+console.log(await worker.worker.bytesRead);
+
+// you can reset bytesRead by assigning to it:
+worker.worker.bytesRead = 0;
 ```
 
 ## Debugging data fetching
