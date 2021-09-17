@@ -77,6 +77,12 @@ const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
 ```
 
+## Cachebusting
+
+Alongside the `url` or `urlPrefix`, config can take an optional `cacheBust` property whose value will be appended as a query parameter to URLs. If you set it to a random value when you update the database you can avoid caching-related database corruption.
+
+If using a remote config (`from: 'jsonconfig'`), don't forget to cachebust that too.
+
 ## Debugging data fetching
 
 If your query is fetching a lot of data and you're not sure why, try this:
