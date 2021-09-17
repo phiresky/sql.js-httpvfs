@@ -59,6 +59,7 @@ export type SplitFileConfigPure = {
 };
 export type SplitFileConfigInner = {
   requestChunkSize: number;
+  cacheBust?: string;
 } & (
   | {
       serverMode: "chunked";
@@ -145,20 +146,21 @@ const mod = {
         config.serverMode === "chunked" ? config.urlPrefix : config.url;
       console.log("constructing url database", id);
       let rangeMapper: RangeMapper;
+      let suffix = config.cacheBust ? "?cb=" + config.cacheBust : "";
       if (config.serverMode == "chunked") {
         rangeMapper = (from: number, to: number) => {
           const serverChunkId = (from / config.serverChunkSize) | 0;
           const serverFrom = from % config.serverChunkSize;
           const serverTo = serverFrom + (to - from);
           return {
-            url: config.urlPrefix + String(serverChunkId).padStart(3, "0"),
+            url: config.urlPrefix + String(serverChunkId).padStart(3, "0") + suffix,
             fromByte: serverFrom,
             toByte: serverTo,
           };
         };
       } else {
         rangeMapper = (fromByte, toByte) => ({
-          url: config.url,
+          url: config.url + suffix,
           fromByte,
           toByte,
         });
