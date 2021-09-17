@@ -80,7 +80,7 @@ const worker = await createDbWorker(
 const result = await worker.db.exec(`select * from table where id = ?`, [123]);
 
 // worker.worker.bytesRead is a Promise for the number of bytes read by the worker.
-// when if a request would cause it to exceed maxBytesToRead, that request will throw a SQLite disk I/O error.
+// if a request would cause it to exceed maxBytesToRead, that request will throw a SQLite disk I/O error.
 console.log(await worker.worker.bytesRead);
 
 // you can reset bytesRead by assigning to it:
