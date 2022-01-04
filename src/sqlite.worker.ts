@@ -153,7 +153,7 @@ const mod = {
           const serverFrom = from % config.serverChunkSize;
           const serverTo = serverFrom + (to - from);
           return {
-            url: config.urlPrefix + String(serverChunkId).padStart(3, "0") + suffix,
+            url: config.urlPrefix + String(serverChunkId).padStart(config.suffixLength, "0") + suffix,
             fromByte: serverFrom,
             toByte: serverTo,
           };
