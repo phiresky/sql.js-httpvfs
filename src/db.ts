@@ -31,14 +31,17 @@ export interface WorkerHttpvfs {
 export async function createDbWorker(
   configs: SplitFileConfig[],
   workerUrl: string,
-  wasmUrl: string
+  wasmUrl: string,
+  maxBytesToRead: number = Infinity
 ): Promise<WorkerHttpvfs> {
   const worker: Worker = new Worker(workerUrl);
   const sqlite = Comlink.wrap<SqliteComlinkMod>(worker);
 
   const db = ((await sqlite.SplitFileHttpDatabase(
     wasmUrl,
-    configs
+    configs,
+    undefined,
+    maxBytesToRead
   )) as unknown) as Comlink.Remote<LazyHttpDatabase>;
 
   worker.addEventListener("message", handleAsyncRequestFromWorkerThread);

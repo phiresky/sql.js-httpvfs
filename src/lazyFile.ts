@@ -8,6 +8,8 @@ export type RangeMapper = (
   toByte: number
 ) => { url: string; fromByte: number; toByte: number };
 
+export type RequestLimiter = (bytes: number) => void;
+
 export type LazyFileConfig = {
   /** function to map a read request to an url with read request  */
   rangeMapper: RangeMapper;
@@ -21,6 +23,8 @@ export type LazyFileConfig = {
   maxReadSpeed?: number;
   /** if true, log all read pages into the `readPages` field for debugging */
   logPageReads?: boolean;
+  /** if defined, this is called once per request and passed the number of bytes about to be requested **/
+  requestLimiter?: RequestLimiter;
 };
 export type PageReadLog = {
   pageno: number;
@@ -46,6 +50,7 @@ export class LazyUint8Array {
   private readonly maxSpeed: number;
   private readonly maxReadHeads: number;
   private readonly logPageReads: boolean;
+  private readonly requestLimiter: RequestLimiter;
 
   constructor(config: LazyFileConfig) {
     this._chunkSize = config.requestChunkSize;
@@ -58,6 +63,7 @@ export class LazyUint8Array {
     if (config.fileLength) {
       this._length = config.fileLength;
     }
+    this.requestLimiter = config.requestLimiter == null ? ((ignored) => {}) : config.requestLimiter;
   }
   /**
    * efficiently copy the range [start, start + length) from the http file into the
@@ -228,6 +234,7 @@ export class LazyUint8Array {
         absoluteFrom / 1024
       } KiB]`
     );
+    this.requestLimiter(absoluteTo - absoluteFrom);
     this.totalFetchedBytes += absoluteTo - absoluteFrom;
     this.totalRequests++;
     if (absoluteFrom > absoluteTo)

@@ -127,10 +127,12 @@ const mod = {
   db: null as null | LazyHttpDatabase,
   inited: false,
   sqljs: null as null | Promise<any>,
+  bytesRead: 0,
   async SplitFileHttpDatabase(
     wasmUrl: string,
     configs: SplitFileConfig[],
-    mainVirtualFilename?: string
+    mainVirtualFilename?: string,
+    maxBytesToRead: number = Infinity,
   ): Promise<LazyHttpDatabase> {
     if (this.inited) throw Error(`sorry, only one db is supported right now`);
     this.inited = true;
@@ -138,6 +140,20 @@ const mod = {
       this.sqljs = init(wasmUrl);
     }
     const sql = await this.sqljs;
+
+    this.bytesRead = 0;
+    let requestLimiter = (bytes: number) => {
+      if (this.bytesRead + bytes > maxBytesToRead) {
+        this.bytesRead = 0;
+        // I couldn't figure out how to get ERRNO_CODES included
+        // so just hardcode the actual value
+        // https://github.com/emscripten-core/emscripten/blob/565fb3651ed185078df1a13b8edbcb6b2192f29e/system/include/wasi/api.h#L146
+        // https://github.com/emscripten-core/emscripten/blob/565fb3651ed185078df1a13b8edbcb6b2192f29e/system/lib/libc/musl/arch/emscripten/bits/errno.h#L13
+        throw new sql.FS.ErrnoError(6 /* EAGAIN */);
+      }
+      this.bytesRead += bytes;
+    };
+
     const lazyFiles = new Map();
     const hydratedConfigs = await fetchConfigs(configs);
     let mainFileConfig;
@@ -182,7 +198,8 @@ const mod = {
             ? config.databaseLengthBytes
             : undefined,
         logPageReads: true,
-        maxReadHeads: 3
+        maxReadHeads: 3,
+        requestLimiter
       });
       lazyFiles.set(filename, lazyFile);
     }
@@ -197,7 +214,7 @@ const mod = {
           `Chunk size does not match page size: pragma page_size = ${pageSize} but chunkSize = ${mainFileConfig.requestChunkSize}`
         );
     }
-  
+
     this.db.lazyFiles = lazyFiles;
     this.db.create_vtab(SeriesVtab);
     this.db.query = (...args) => toObjects(this.db!.exec(...args));
