@@ -66,6 +66,7 @@ export type SplitFileConfigInner = {
       urlPrefix: string;
       serverChunkSize: number;
       databaseLengthBytes: number;
+      suffixLength: number;
     }
   | {
       serverMode: "full";
