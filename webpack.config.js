@@ -11,6 +11,7 @@ module.exports = {
   // mode:,
   devtool: "source-map",
   module: {
+    noParse: /sql-wasm\.js/,
     rules: [
       {
         test: /\.tsx?$/,
