@@ -27,6 +27,7 @@ export interface WorkerHttpvfs {
   db: Comlink.Remote<LazyHttpDatabase>;
   worker: Comlink.Remote<SqliteComlinkMod>;
   configs: SplitFileConfig[];
+  release: () => void;
 }
 export async function createDbWorker(
   configs: SplitFileConfig[],
@@ -43,9 +44,14 @@ export async function createDbWorker(
     undefined,
     maxBytesToRead
   )) as unknown) as Comlink.Remote<LazyHttpDatabase>;
+  const release = () => {
+    db[Comlink.releaseProxy]();
+    sqlite[Comlink.releaseProxy]();
+    worker.terminate();
+  }
 
   worker.addEventListener("message", handleAsyncRequestFromWorkerThread);
-  return { db, worker: sqlite, configs };
+  return { db, worker: sqlite, configs, release };
 }
 
 async function handleAsyncRequestFromWorkerThread(ev: MessageEvent) {
