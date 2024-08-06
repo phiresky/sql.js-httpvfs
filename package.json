@@ -5,7 +5,8 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "webpack serve --mode=development",
-    "build": "webpack build --mode=production"
+    "build": "webpack build --mode=production",
+    "build-sql": "cd sql.js && yarn build && cd .. && webpack build --mode=production"
   },
   "dependencies": {
     "comlink": "^4.3.0"

@@ -39,8 +39,7 @@ EMFLAGS = \
 	-s EXTRA_EXPORTED_RUNTIME_METHODS=@src/exported_runtime_methods.json \
 	-s SINGLE_FILE=0 \
 	-s NODEJS_CATCH_EXIT=0 \
-	-s NODEJS_CATCH_REJECTION=0 \
-	-s LEGACY_RUNTIME=1
+	-s NODEJS_CATCH_REJECTION=0
 
 #	-s ASYNCIFY=1 \
 #	-s ASYNCIFY_IMPORTS='["sqlite3VdbeExec"]'

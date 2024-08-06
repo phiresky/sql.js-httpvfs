@@ -1,10 +1,10 @@
 /// <reference path="./types.d.ts" />
 
 import * as Comlink from "comlink";
+import { Database, QueryExecResult } from "sql.js";
 import initSqlJs from "../sql.js/dist/sql-wasm.js";
 import wasmUrl from "../sql.js/dist/sql-wasm.wasm";
 import { createLazyFile, LazyUint8Array, PageReadLog, RangeMapper } from "./lazyFile";
-import { Database, QueryExecResult } from "sql.js";
 import { SeriesVtab, sqlite3_module, SqljsEmscriptenModuleType } from "./vtab";
 
 wasmUrl;
@@ -71,6 +71,7 @@ export type SplitFileConfigInner = {
   | {
       serverMode: "full";
       url: string;
+      headUrl?: string;
     }
 );
 export interface LazyHttpDatabase extends Database {
@@ -115,6 +116,7 @@ async function fetchConfigs(
             : {
                 ...configOut,
                 url: new URL(configOut.url, configUrl).toString(),
+                headUrl: configOut.headUrl ? new URL(configOut.headUrl, configUrl).toString() : new URL(configOut.url, configUrl).toString(),
               },
         virtualFilename: config.virtualFilename,
       } as SplitFileConfigPure;
@@ -171,6 +173,7 @@ const mod = {
           const serverTo = serverFrom + (to - from);
           return {
             url: config.urlPrefix + String(serverChunkId).padStart(config.suffixLength, "0") + suffix,
+            headUrl: config.headUrl ?? config.urlPrefix + String(serverChunkId).padStart(config.suffixLength, "0") + suffix,
             fromByte: serverFrom,
             toByte: serverTo,
           };
@@ -178,6 +181,7 @@ const mod = {
       } else {
         rangeMapper = (fromByte, toByte) => ({
           url: config.url + suffix,
+          headUrl: config.headUrl ? config.headUrl + suffix : config.url + suffix,
           fromByte,
           toByte,
         });
@@ -189,7 +193,7 @@ const mod = {
         mainVirtualFilename = filename;
         mainFileConfig = config
       }
-      console.log("filename", filename);
+
       console.log("constructing url database", id, "filename", filename);
       const lazyFile = createLazyFile(sql.FS, "/", filename, true, true, {
         rangeMapper,

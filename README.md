@@ -189,7 +189,7 @@ The full code of this example is in [example/](./example/).
 
 ## Compiling
 
-To compile this project (only needed if you want to modify the library itself), make sure you have emscripten, then first compile sql.js, then sql.js-httpvfs:
+To compile this project (only needed if you want to modify the library itself), make sure you have emscripten (min. 3.1.0), then first compile sql.js, then sql.js-httpvfs:
 
 ```
 cd sql.js

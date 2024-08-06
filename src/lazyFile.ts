@@ -6,7 +6,7 @@
 export type RangeMapper = (
   fromByte: number,
   toByte: number
-) => { url: string; fromByte: number; toByte: number };
+) => { url: string; headUrl: string; fromByte: number; toByte: number };
 
 export type RequestLimiter = (bytes: number) => void;
 
@@ -169,7 +169,7 @@ export class LazyUint8Array {
   /** verify the server supports range requests and find out file length */
   private checkServer() {
     var xhr = new XMLHttpRequest();
-    const url = this.rangeMapper(0, 0).url;
+    const url = this.rangeMapper(0, 0).headUrl;
     // can't set Accept-Encoding header :( https://stackoverflow.com/questions/41701849/cannot-modify-accept-encoding-with-fetch
     xhr.open("HEAD", url, false);
     // // maybe this will help it not use compression?
